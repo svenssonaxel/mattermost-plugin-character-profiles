@@ -34,7 +34,7 @@ func (p *Plugin) NpcPost(post *model.Post) (*model.Post, string) {
 		return nil, ""
 	}
 	// Check if the post message matches the regex pattern
-	pattern := regexp.MustCompile(`(?s)^npc ([a-z]+): ?(.*)$`)
+	pattern := regexp.MustCompile(`(?s)^([a-z]+): ?(.*)$`)
 	matches := pattern.FindStringSubmatch(post.Message)
 	ret := post.Clone()
 	if len(matches) == 3 {
