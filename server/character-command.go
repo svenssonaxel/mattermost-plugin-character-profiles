@@ -170,5 +170,5 @@ func appError(message string, err error) *model.AppError {
 	if err != nil {
 		errorMessage = err.Error()
 	}
-	return model.NewAppError("PC/NPC plugin", message, nil, errorMessage, http.StatusBadRequest)
+	return model.NewAppError("Character Profile Plugin", message, nil, errorMessage, http.StatusBadRequest)
 }

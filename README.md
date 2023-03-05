@@ -1,1 +1,1 @@
-# Mattermost Plugin for PC/NPC functionality
+# Character Profile Plugin for Mattermost

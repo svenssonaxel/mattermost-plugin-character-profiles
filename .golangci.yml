@@ -6,7 +6,7 @@ linters-settings:
   gofmt:
     simplify: true
   goimports:
-    local-prefixes: github.com/svenssonaxel/mattermost-plugin-pc-npc
+    local-prefixes: github.com/svenssonaxel/mattermost-plugin-character-profiles
   govet:
     check-shadowing: true
     enable-all: true

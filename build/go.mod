@@ -1,4 +1,4 @@
-module github.com/svenssonaxel/mattermost-plugin-pc-npc/build
+module github.com/svenssonaxel/mattermost-plugin-character-profiles/build
 
 go 1.12
 
