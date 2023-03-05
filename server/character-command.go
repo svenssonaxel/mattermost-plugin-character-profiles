@@ -13,10 +13,10 @@ import (
 func (p *Plugin) OnActivate() error {
 	return p.API.RegisterCommand(&model.Command{
 		Trigger:          "character",
-		Description:      "Be a nomad of names, a riddle of labels, master of personas and weaver of fables.",
+		Description:      "Become a nomad of names, a litany of labels, to master monikers and fabricate fables.",
 		DisplayName:      "Character profiles",
 		AutoComplete:     true,
-		AutoCompleteDesc: "Try `/character help` to become a nomad of names, a riddle of labels, master of personas and weaver of fables.",
+		AutoCompleteDesc: "Try `/character help` to become a nomad of names, a litany of labels, to master monikers and fabricate fables.",
 		AutoCompleteHint: "haddock=Captain Haddock",
 	})
 }
