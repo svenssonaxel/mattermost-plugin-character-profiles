@@ -250,6 +250,18 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 		return "## Default character profiles", attachments, nil
 	}
 
+	// Undocumented command to corrupt a profile, for testing purposes.
+	matches = regexp.MustCompile(`^corrupt([123]) ([a-z]+)$`).FindStringSubmatch(query)
+	if len(matches) == 3 {
+		corruptionMethod := matches[1]
+		profileId := matches[2]
+		err := corruptProfile(be, userId, profileId, corruptionMethod)
+		if err != nil {
+			return "", nil, err
+		}
+		return fmt.Sprintf("Successfully corrupted profile `%s` using method %s.", profileId, corruptionMethod), nil, nil
+	}
+
 	return "", nil, appError("Unrecognized command. Try `/character help`.", nil)
 }
 

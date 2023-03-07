@@ -376,3 +376,26 @@ func profileIconUrl(be Backend, profile Profile, thumbnail bool) string {
 func ProfileIdsKey(userId string) string {
 	return fmt.Sprintf("profilelist_%s", userId)
 }
+
+func corruptProfile(be Backend, userId string, profileId string, method string) *model.AppError {
+	profile, err := GetProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_CORRUPT)
+	if err != nil {
+		return err
+	}
+	switch method {
+	case "1":
+		profile.Name += "_other"
+		break
+	case "2":
+		profile.Name = ""
+		break
+	case "3":
+		profile.PictureFileId = "nonexistentFileId"
+		break
+	}
+	err = be.KVSet(getProfileKey(userId, profileId), profile.EncodeToByte())
+	if err != nil {
+		return err
+	}
+	return nil
+}
