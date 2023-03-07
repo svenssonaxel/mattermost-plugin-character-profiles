@@ -2,8 +2,10 @@
 Sometimes you may want to write messages that appear to have been sent by someone other than yourself, such as when speaking as your PC or an NPC. The `/character` command provides this functionality. Here is how to use it:
 
 ## Manage character profiles
-In order to act as several PCs or NPCs, you create a "character profile" for each. Character profiles that you create can be used in any channel in any team, but only by you. A character profile has an identifier that can only be lowercase a-z, and a display name that can be anything you like. As a special case, identifiers `myself` and `me` refer to your real Mattermost profile.
-- `/character haddock=Captain Haddock`: Create or overwrite a character profile with identifier `haddock` and set its display name to `Captain Haddock`.
+In order to act as several PCs or NPCs, you create a "character profile" for each. Character profiles that you create can be used in any channel in any team, but only by you. A character profile has an identifier that can only be lowercase a-z, a display name that can be anything you like, and optionally a profile picture. As a special case, identifiers `myself` and `me` refer to your real Mattermost profile.
+- `/character haddock=Captain Haddock`: Create a character profile with identifier `haddock` unless it already exists, and set its display name to `Captain Haddock`.
+- `/character picture haddock=Captain Haddock`: Create a character profile with identifier `haddock` unless it already exists, set its display name to `Captain Haddock`, and set its profile picture to the picture uploaded in the parent message. (Note that you can **not** attach a picture to the slash command itself, for technical reasons.)
+- `/character picture haddock`: Modify an existing character profile by updating the profile picture to the picture uploaded in the parent message, leaving the display name as it is. (Note that you can **not** attach a picture to the slash command itself, for technical reasons.)
 - `/character delete haddock`: Delete character profile with identifier `haddock`.
 - `/character list`: List your character profiles.
 
