@@ -20,6 +20,28 @@ type Plugin struct {
 	// configuration is the active plugin configuration. Consult getConfiguration and
 	// setConfiguration for usage.
 	configuration *configuration
+
+	// The Site URL fetched from configuration or empty string
+	siteURL string
+}
+
+func (p *Plugin) OnActivate() error {
+	err := p.API.RegisterCommand(&model.Command{
+		Trigger:          "character",
+		Description:      "Become a nomad of names, a litany of labels, to master monikers and fabricate fables.",
+		DisplayName:      "Character profiles",
+		AutoComplete:     true,
+		AutoCompleteDesc: "Try `/character help` to become a nomad of names, a litany of labels, to master monikers and fabricate fables.",
+		AutoCompleteHint: "haddock=Captain Haddock",
+	})
+	if err != nil {
+		return err
+	}
+	maybeSiteURL := p.API.GetConfig().ServiceSettings.SiteURL
+	if maybeSiteURL != nil {
+		p.siteURL = *maybeSiteURL
+	}
+	return nil
 }
 
 func (p *Plugin) MessageWillBePosted(_ *plugin.Context, post *model.Post) (*model.Post, string) {
@@ -57,7 +79,7 @@ func (p *Plugin) ProfiledPost(post *model.Post, isedited bool) (*model.Post, str
 		if err == nil && profile != nil {
 			// We found a matching profile, so this is an actual one-off post.
 			ret.Message = actualMessage
-			return profilePost(ret, profile)
+			return p.profilePost(ret, profile)
 		}
 	}
 
@@ -69,7 +91,7 @@ func (p *Plugin) ProfiledPost(post *model.Post, isedited bool) (*model.Post, str
 			profile, err := p.getProfile(userId, oldProfileIdentifierStr, true)
 			if err == nil && profile != nil {
 				// We found a matching profile, so let's update the post with the current settings.
-				return profilePost(ret, profile)
+				return p.profilePost(ret, profile)
 			}
 		}
 	}
@@ -85,7 +107,7 @@ func (p *Plugin) ProfiledPost(post *model.Post, isedited bool) (*model.Post, str
 		profile, err := p.getProfile(userId, profileId, true)
 		if err == nil && profile != nil {
 			// We found a matching profile, so let's apply it to the post.
-			return profilePost(ret, profile)
+			return p.profilePost(ret, profile)
 		}
 	}
 
@@ -101,11 +123,11 @@ func mePost(post *model.Post) (*model.Post, string) {
 	return post, ""
 }
 
-func profilePost(post *model.Post, profile *Profile) (*model.Post, string) {
+func (p *Plugin) profilePost(post *model.Post, profile *Profile) (*model.Post, string) {
 	// Send a normal message with the selected profile
 	post.AddProp("profile_identifier", profile.Identifier)
 	post.AddProp("override_username", profile.Name)
-	post.AddProp("override_icon_url", profileIconUrl(profile.PictureFileId, false))
+	post.AddProp("override_icon_url", p.profileIconUrl(profile.PictureFileId, false))
 	post.AddProp("from_webhook", "true") // Unfortunately we need to pretend this is from a bot, or the username won't get overridden.
 	return post, ""
 }
@@ -121,15 +143,15 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	http.ServeFile(w, r, filepath.Join(bundlePath, "assets", r.URL.Path))
 }
 
-func profileIconUrl(fileId string, thumbnail bool) string {
+func (p *Plugin) profileIconUrl(fileId string, thumbnail bool) string {
 	if fileId == "" {
 		if thumbnail {
-			return "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character-thumbnail.jpeg"
+			return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character-thumbnail.jpeg"
 		}
-		return "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character.png"
+		return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character.png"
 	}
 	if thumbnail {
-		return "/api/v4/files/" + fileId + "/thumbnail"
+		return p.siteURL + "/api/v4/files/" + fileId + "/thumbnail"
 	}
-	return "/api/v4/files/" + fileId
+	return p.siteURL + "/api/v4/files/" + fileId
 }

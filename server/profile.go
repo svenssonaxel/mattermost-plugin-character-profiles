@@ -222,16 +222,16 @@ func (p *Plugin) getDefaultProfileIdentifier(userId, channelId string) (string, 
 	return string(b), nil
 }
 
-func (p *Plugin) setDefaultProfileIdentifier(userId, channelId, profileId string) (string, *model.AppError) {
+func (p *Plugin) setDefaultProfileIdentifier(userId, channelId, profileId string) (*Profile, *model.AppError) {
 	profile, err := p.getProfile(userId, profileId, true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	err = p.API.KVSet(getDefaultProfileKey(userId, channelId), []byte(profileId))
 	if err != nil {
-		return "", appError("", err)
+		return nil, appError("", err)
 	}
-	return profile.Name, nil
+	return profile, nil
 }
 
 func appErrorPre(prefix string, err *model.AppError) *model.AppError {
