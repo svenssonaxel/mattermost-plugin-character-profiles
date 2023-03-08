@@ -182,10 +182,13 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 		if err != nil {
 			return "", nil, err
 		}
-		if len(profiles) == 0 {
-			return "You have no character profiles yet.", nil, nil
+		attachments1 := p.attachmentsFromProfiles(profiles)
+		attachments2, err := p.attachmentsFromRealProfile(userId)
+		if err != nil {
+			return "", nil, err
 		}
-		return "## Character profiles", p.attachmentsFromProfiles(profiles), nil
+		attachments := append(attachments1, attachments2...)
+		return "## Character profiles", attachments, nil
 	}
 
 	// `/character I am haddock`
@@ -205,7 +208,11 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 			if err != nil {
 				return "", nil, err
 			}
-			return "You are now yourself again. Hope that feels ok.", nil, nil // todo attachment of self
+			attachments, err := p.attachmentsFromRealProfile(userId)
+			if err != nil {
+				return "", nil, err
+			}
+			return "You are now yourself again. Hope that feels ok.", attachments, nil
 		} else {
 			newProfile, err := p.setDefaultProfileIdentifier(userId, channelId, newProfileId)
 			if err != nil {
@@ -245,4 +252,23 @@ func (p *Plugin) attachmentsFromProfiles(profiles []Profile) []*model.SlackAttac
 
 func (p *Plugin) attachmentsFromProfile(profile Profile) []*model.SlackAttachment {
 	return p.attachmentsFromProfiles([]Profile{profile})
+}
+
+func (p *Plugin) attachmentsFromRealProfile(userId string) ([]*model.SlackAttachment, *model.AppError) {
+	user, err := p.API.GetUser(userId)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, appError("Could not fetch user.", nil)
+	}
+	displayName := user.GetDisplayName(model.SHOW_FULLNAME)	// Options are: model.SHOW_USERNAME, model.SHOW_FULLNAME, model.SHOW_NICKNAME_FULLNAME
+	profilePictureURL := fmt.Sprintf("%s/api/v4/users/%s/image", p.siteURL, userId)
+	return []*model.SlackAttachment{
+		{
+			Text:     fmt.Sprintf("**%s** *(this is your real profile)*\n`me`, `myself`", displayName),
+			ThumbURL: profilePictureURL,
+			Color: "#ff0000",
+		},
+	}, nil
 }
