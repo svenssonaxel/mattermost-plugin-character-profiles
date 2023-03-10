@@ -187,8 +187,8 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 		return "## Character profiles", p.attachmentsFromProfiles(profiles), nil
 	}
 
-	// `/character I am haddock`
-	// `/character I am myself`
+	// `/character I am haddock`: Set default character profile identifier for the current channel to `haddock`.
+	// `/character I am myself`: Remove the default character profile for the current channel.
 	matches = regexp.MustCompile(`^I am ([a-z]+)$`).FindStringSubmatch(query)
 	if len(matches) == 2 {
 		newProfileId := matches[1]
