@@ -13,6 +13,7 @@ In order to act as several PCs or NPCs, you create a "character profile" for eac
 Sometimes, e.g. for PCs, you want to use a certain character profile for most messages. For each channel, you can set a default character profile identifier that will be used for all messages except those sent using the single message functionality described below.
 - `/character I am haddock`: Set default character profile identifier for the current channel to `haddock`.
 - `/character I am myself`: Remove the default character profile for the current channel.
+- `/character who am I`: List default character profiles for the channels in this team.
 
 ## Use a character profile for a single message
 Sometimes, e.g. for NPCs, you want to use character profiles in a one-off fashion. To do so, prefix your message with the character profile identifier, followed by a colon, followed by either a space or a newline. If you have a character profile with that identifier, it will be applied to the message and the prefix will be removed.

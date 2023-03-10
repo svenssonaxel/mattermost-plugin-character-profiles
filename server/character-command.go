@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/mattermost/mattermost-server/v5/model"
@@ -224,6 +225,52 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 		}
 	}
 
+	// `/character who am I`: List default character profiles for the channels in this team.
+	if query == "who am I" {
+		channels, err := p.API.GetChannelsForTeamForUser(teamId, userId, false)
+		if err != nil {
+			return "", nil, err
+		}
+		profileIdToChannelMentions := map[string][]string{}
+		// Get default profile identifiers for all channels in this team.
+		for _, channel := range channels {
+			defaultProfileIdentifier, err := p.getDefaultProfileIdentifier(userId, channel.Id)
+			if err != nil {
+				return "", nil, err
+			}
+			channelMention, err := p.channelMention(channel, userId, teamId)
+			if err != nil {
+				return "", nil, err
+			}
+			profileIdToChannelMentions[defaultProfileIdentifier] = append(profileIdToChannelMentions[defaultProfileIdentifier], channelMention)
+		}
+		// Get profiles for all default profile identifiers and sort them.
+		profiles := []Profile{}
+		for profileId := range profileIdToChannelMentions {
+			profile, err := p.getProfile(userId, profileId, PROFILE_CHARACTER|PROFILE_ME|PROFILE_CORRUPT|PROFILE_NONEXISTENT)
+			if err != nil {
+				return "", nil, err
+			}
+			if profile != nil {
+				profiles = append(profiles, *profile)
+			}
+		}
+		sortProfiles(profiles)
+		// Build attachments.
+		attachments := make([]*model.SlackAttachment, len(profiles))
+		for i, profile := range profiles {
+			profileId := profile.Identifier
+			channelMentions := profileIdToChannelMentions[profileId]
+			sortChannelMentions(channelMentions)
+			// Join channel mentions with commas.
+			channelNamesString := "\nDefault profile in: " + strings.Join(channelMentions, ", ")
+			attachment := p.attachmentFromProfile(profile)
+			attachment.Text += channelNamesString
+			attachments[i] = attachment
+		}
+		return "## Default character profiles", attachments, nil
+	}
+
 	return "", nil, appError("Unrecognized command. Try `/character help`.", nil)
 }
 
@@ -280,4 +327,105 @@ func (p *Plugin) attachmentsFromProfiles(profiles []Profile) []*model.SlackAttac
 		ret[i] = p.attachmentFromProfile(profile)
 	}
 	return ret
+}
+
+func (p *Plugin) channelMention(channel *model.Channel, userId string, teamId string) (string, *model.AppError) {
+	switch channel.Type {
+	case model.CHANNEL_OPEN, model.CHANNEL_PRIVATE:
+		return fmt.Sprintf("~%s", channel.Name), nil
+	case model.CHANNEL_DIRECT:
+		members, err := p.API.GetChannelMembers(channel.Id, 0, 100)
+		if err != nil {
+			return "", err
+		}
+		if members == nil {
+			return "", appError(fmt.Sprintf("Channel %s has no members.", channel.Id), nil)
+		}
+		if len(*members) != 2 {
+			return "", appError(fmt.Sprintf("Channel %s has %d members, expected 2.", channel.Id, len(*members)), nil)
+		}
+		for _, member := range *members {
+			if member.UserId != userId {
+				user, err := p.API.GetUser(member.UserId)
+				if err != nil {
+					return "", err
+				}
+				if user == nil {
+					return "", appError(fmt.Sprintf("User %s does not exist.", member.UserId), nil)
+				}
+				return fmt.Sprintf("@%s", user.Username), nil
+			}
+		}
+		return "", appError(fmt.Sprintf("Channel %s has no members other than %s.", channel.Id, userId), nil)
+	case model.CHANNEL_GROUP:
+		team, err := p.API.GetTeam(teamId)
+		if err != nil {
+			return "", err
+		}
+		if team == nil {
+			return "", appError(fmt.Sprintf("Team %s does not exist.", teamId), nil)
+		}
+		teamName := team.Name
+		memberNames := []string{}
+		members, err := p.API.GetChannelMembers(channel.Id, 0, 100)
+		if err != nil {
+			return "", err
+		}
+		if members == nil {
+			return "", appError(fmt.Sprintf("Channel %s has no members.", channel.Id), nil)
+		}
+		for _, member := range *members {
+			if member.UserId == userId {
+				continue
+			}
+			user, err := p.API.GetUser(member.UserId)
+			if err != nil {
+				return "", err
+			}
+			if user == nil {
+				return "", appError(fmt.Sprintf("User %s does not exist.", member.UserId), nil)
+			}
+			memberNames = append(memberNames, user.Username)
+		}
+		sort.Strings(memberNames)
+		if len(memberNames) == 0 {
+			return "", appError(fmt.Sprintf("Channel %s has no members other than user %s.", channel.Id, userId), nil)
+		}
+		if len(memberNames) > 5 {
+			memberNames[4] = fmt.Sprintf("%d others", len(memberNames)-4)
+			memberNames = memberNames[:5]
+		}
+		if len(memberNames) > 1 {
+			ml := len(memberNames)
+			memberNames[ml-2] = memberNames[ml-2] + " and " + memberNames[ml-1]
+			memberNames = memberNames[:ml-1]
+		}
+		return fmt.Sprintf("[Group Chat](%s/%s/messages/%s) with %s", p.siteURL, teamName, channel.Name, strings.Join(memberNames, ", ")), nil
+	default:
+		return "", appError(fmt.Sprintf("Unknown channel type %s.", channel.Type), nil)
+	}
+}
+
+func sortChannelMentions(channelMentions []string) {
+	sort.Slice(channelMentions, func(i, j int) bool {
+		// Sort channels first, then group chats, then direct messages. Within each category, sort alphabetically.
+		getChannelCategory := func(channelMention string) string {
+			if strings.HasPrefix(channelMention, "~") {
+				return "1: Channel"
+			}
+			if strings.HasPrefix(channelMention, "[Group") {
+				return "2: Group"
+			}
+			if strings.HasPrefix(channelMention, "@") {
+				return "3: Direct message"
+			}
+			return "4: Unknown"
+		}
+		iCategory := getChannelCategory(channelMentions[i])
+		jCategory := getChannelCategory(channelMentions[j])
+		if iCategory != jCategory {
+			return iCategory < jCategory
+		}
+		return channelMentions[i] < channelMentions[j]
+	})
 }
