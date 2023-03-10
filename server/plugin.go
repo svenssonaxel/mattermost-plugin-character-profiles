@@ -71,15 +71,11 @@ func (p *Plugin) ProfiledPost(post *model.Post, isedited bool) (*model.Post, str
 		// This might be a one-off post.
 		profileId := matches[1]
 		actualMessage := matches[2]
-		if isMe(profileId) {
-			ret.Message = actualMessage
-			return mePost(ret)
-		}
-		profile, err := p.getProfile(userId, profileId, true)
+		profile, err := p.getProfile(userId, profileId, PROFILE_CHARACTER|PROFILE_ME)
 		if err == nil && profile != nil {
 			// We found a matching profile, so this is an actual one-off post.
 			ret.Message = actualMessage
-			return p.profilePost(ret, profile)
+			return p.profilePost(ret, *profile)
 		}
 	}
 
@@ -88,10 +84,10 @@ func (p *Plugin) ProfiledPost(post *model.Post, isedited bool) (*model.Post, str
 	if opiOk {
 		oldProfileIdentifierStr, ok := oldProfileIdentifier.(string)
 		if ok {
-			profile, err := p.getProfile(userId, oldProfileIdentifierStr, true)
+			profile, err := p.getProfile(userId, oldProfileIdentifierStr, PROFILE_CHARACTER)
 			if err == nil && profile != nil {
 				// We found a matching profile, so let's update the post with the current settings.
-				return p.profilePost(ret, profile)
+				return p.profilePost(ret, *profile)
 			}
 		}
 	}
@@ -100,36 +96,39 @@ func (p *Plugin) ProfiledPost(post *model.Post, isedited bool) (*model.Post, str
 		return nil, ""
 	}
 
-	// Handle new posts affected by channel default profile
+	// Handle new posts
 	channelId := post.ChannelId
 	profileId, err := p.getDefaultProfileIdentifier(userId, channelId)
-	if err == nil && !isMe(profileId) {
-		profile, err := p.getProfile(userId, profileId, true)
+	if err == nil {
+		profile, err := p.getProfile(userId, profileId, PROFILE_CHARACTER|PROFILE_ME)
 		if err == nil && profile != nil {
 			// We found a matching profile, so let's apply it to the post.
-			return p.profilePost(ret, profile)
+			return p.profilePost(ret, *profile)
 		}
 	}
 
-	// The default is to send as yourself.
-	return mePost(ret)
+	// This shouldn't happen, but if it does let's not make a fuss.
+	return nil, ""
 }
 
-func mePost(post *model.Post) (*model.Post, string) {
-	post.AddProp("profile_identifier", "myself")
-	post.AddProp("override_username", nil)
-	post.AddProp("override_icon_url", nil)
-	post.AddProp("from_webhook", nil)
-	return post, ""
-}
-
-func (p *Plugin) profilePost(post *model.Post, profile *Profile) (*model.Post, string) {
+func (p *Plugin) profilePost(post *model.Post, profile Profile) (*model.Post, string) {
 	// Send a normal message with the selected profile
-	post.AddProp("profile_identifier", profile.Identifier)
-	post.AddProp("override_username", profile.Name)
-	post.AddProp("override_icon_url", p.profileIconUrl(profile.PictureFileId, false))
-	post.AddProp("from_webhook", "true") // Unfortunately we need to pretend this is from a bot, or the username won't get overridden.
-	return post, ""
+	switch profile.Status {
+	case PROFILE_ME:
+		post.AddProp("profile_identifier", "myself")
+		post.AddProp("override_username", nil)
+		post.AddProp("override_icon_url", nil)
+		post.AddProp("from_webhook", nil)
+		return post, ""
+	case PROFILE_CHARACTER:
+		post.AddProp("profile_identifier", profile.Identifier)
+		post.AddProp("override_username", profile.Name)
+		post.AddProp("override_icon_url", p.profileIconUrl(profile, false))
+		post.AddProp("from_webhook", "true") // Unfortunately we need to pretend this is from a bot, or the username won't get overridden.
+		return post, ""
+	default:
+		return nil, "Invalid profile status"
+	}
 }
 
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
@@ -143,15 +142,25 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	http.ServeFile(w, r, filepath.Join(bundlePath, "assets", r.URL.Path))
 }
 
-func (p *Plugin) profileIconUrl(fileId string, thumbnail bool) string {
-	if fileId == "" {
-		if thumbnail {
-			return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character-thumbnail.jpeg"
+func (p *Plugin) profileIconUrl(profile Profile, thumbnail bool) string {
+	if profile.Status == PROFILE_CHARACTER {
+		fileId := profile.PictureFileId
+		if fileId == "" {
+			if thumbnail {
+				return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character-thumbnail.jpeg"
+			}
+			return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character.png"
 		}
-		return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character.png"
+		if thumbnail {
+			return p.siteURL + "/api/v4/files/" + fileId + "/thumbnail"
+		}
+		return p.siteURL + "/api/v4/files/" + fileId
+	}
+	if profile.Status == PROFILE_ME {
+		return p.siteURL + "/api/v4/users/" + profile.UserId + "/image" // todo how to get thumbnail?
 	}
 	if thumbnail {
-		return p.siteURL + "/api/v4/files/" + fileId + "/thumbnail"
+		return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign-thumbnail.jpg"
 	}
-	return p.siteURL + "/api/v4/files/" + fileId
+	return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign.jpg"
 }

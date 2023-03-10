@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/mattermost/mattermost-server/v5/model"
@@ -13,12 +14,22 @@ const (
 	perPage = 50
 )
 
+const (
+	PROFILE_CHARACTER   = 0x1
+	PROFILE_ME          = 0x2
+	PROFILE_CORRUPT     = 0x4
+	PROFILE_NONEXISTENT = 0x8
+)
+
 type Profile struct {
-	Identifier      string          `json:"id"`          // todo rename to Id
+	UserId          string          `json:"-"`           // not stored
+	Identifier      string          `json:"-"`           // not stored
 	Name            string          `json:"displayName"` // todo rename to DisplayName
 	PictureFileId   string          `json:"pictureFile"`
 	PictureFileInfo *model.FileInfo `json:"-"` // not stored
 	PicturePost     *model.Post     `json:"-"` // not stored
+	Status          int             `json:"-"` // not stored. Can be any of PROFILE_*.
+	Error           *model.AppError `json:"-"` // not stored. Must be set if Status == PROFILE_NONEXISTENT || Status == PROFILE_CORRUPTED.
 }
 
 func (p *Plugin) populateProfile(profile *Profile) *model.AppError {
@@ -101,6 +112,26 @@ func (p *Plugin) validateProfile(profile *Profile, profileId string) *model.AppE
 			return appError(pre+"The post supposedly holding the profile picture does not hold the expected file.", nil)
 		}
 	}
+	switch profile.Status {
+	case PROFILE_CHARACTER:
+		if profile.Error != nil {
+			return appError(pre+"Error is set despite status being PROFILE_CHARACTER.", nil)
+		}
+		if isMe(profile.Identifier) {
+			return appError(pre+"Identifier indicates real profile despite status being PROFILE_CHARACTER.", nil)
+		}
+		break
+	case PROFILE_ME:
+		if profile.Error != nil {
+			return appError(pre+"Error is set despite status being PROFILE_ME.", nil)
+		}
+		if !isMe(profile.Identifier) {
+			return appError(pre+"Identifier does not indicate real profile despite status being PROFILE_ME.", nil)
+		}
+		break
+	default:
+		return appError(pre+"Status is not PROFILE_CHARACTER or PROFILE_ME.", nil)
+	}
 	return nil
 }
 
@@ -111,13 +142,13 @@ func (p *Plugin) EncodeToByte(profile *Profile) []byte {
 }
 
 // DecodeProfileFromByte tries to create a Profile from a byte array
-func (p *Plugin) DecodeProfileFromByte(b []byte) *Profile {
+func (p *Plugin) DecodeProfileFromByte(b []byte) (*Profile, *model.AppError) {
 	profile := Profile{}
 	err := json.Unmarshal(b, &profile)
 	if err != nil {
-		return nil
+		return nil, appError("Failed to decode profile", err)
 	}
-	return &profile
+	return &profile, nil
 }
 
 func getProfileKey(userId, profileId string) string {
@@ -132,25 +163,81 @@ func (p *Plugin) profileExists(userId, profileId string) (bool, *model.AppError)
 	return b != nil, nil
 }
 
-func (p *Plugin) getProfile(userId, profileId string, validate bool) (*Profile, *model.AppError) {
+func (p *Plugin) getProfile(userId, profileId string, accepted int) (*Profile, *model.AppError) {
+	// Handle the real profile
+	if isMe(profileId) {
+		if accepted&PROFILE_ME != 0 {
+			user, err := p.API.GetUser(userId)
+			if err != nil {
+				return nil, err
+			}
+			if user == nil {
+				return nil, appError("Could not fetch user.", nil)
+			}
+			return &Profile{
+				UserId:     userId,
+				Identifier: profileId,
+				Name:       user.GetDisplayName(model.SHOW_FULLNAME), // Todo options are: model.SHOW_USERNAME, model.SHOW_FULLNAME, model.SHOW_NICKNAME_FULLNAME
+				Status:     PROFILE_ME,
+			}, nil
+		} else {
+			return nil, appError(fmt.Sprintf("Profile identifier `%s` refers to the real profile.", profileId), nil)
+		}
+	}
+
+	// Try to fetch profile
 	b, err := p.API.KVGet(getProfileKey(userId, profileId))
 	if err != nil {
 		return nil, err
 	}
+
+	// Handle nonexistent profile
 	if b == nil {
-		return nil, appError(fmt.Sprintf("Profile `%s` does not exist.", profileId), nil)
-	}
-	profile := p.DecodeProfileFromByte(b)
-	if profile == nil {
-		return nil, appError(fmt.Sprintf("Profile `%s` failed to decode and needs to be recreated.", profileId), nil)
-	}
-	if validate {
-		err = p.validateProfile(profile, profileId)
-		if err != nil {
-			return nil, appErrorPre(fmt.Sprintf("Profile `%s` is corrupt and needs to be recreated: ", profileId), err)
+		nonexistentErr := appError(fmt.Sprintf("Profile `%s` does not exist.", profileId), nil)
+		if accepted&PROFILE_NONEXISTENT != 0 {
+			return &Profile{
+				UserId:     userId,
+				Identifier: profileId,
+				Status:     PROFILE_NONEXISTENT,
+				Error:      nonexistentErr,
+			}, nil
+		} else {
+			return nil, nonexistentErr
 		}
 	}
-	return profile, nil
+
+	// Decode
+	profile, corruptionErr := p.DecodeProfileFromByte(b)
+	// Handle character and corrupt profile
+	if corruptionErr == nil && profile == nil {
+		corruptionErr = appError(fmt.Sprintf("Profile `%s` failed to decode and needs to be recreated.", profileId), nil)
+	}
+	if profile == nil {
+		profile = &Profile{}
+	}
+	profile.UserId = userId
+	profile.Identifier = profileId
+	profile.Status = PROFILE_CHARACTER
+	if corruptionErr == nil {
+		validateErr := p.validateProfile(profile, profileId)
+		if validateErr != nil {
+			corruptionErr = appErrorPre(fmt.Sprintf("Profile `%s` is corrupt and needs to be recreated", profileId), validateErr)
+		}
+	}
+	if corruptionErr != nil {
+		if accepted&PROFILE_CORRUPT != 0 {
+			profile.Status = PROFILE_CORRUPT
+			profile.Error = corruptionErr
+			return profile, nil
+		} else {
+			return nil, corruptionErr
+		}
+	}
+	if accepted&PROFILE_CHARACTER != 0 {
+		return profile, nil
+	} else {
+		return nil, appError(fmt.Sprintf("Profile identifier `%s` refers to a character profile.", profileId), nil)
+	}
 }
 
 func (p *Plugin) setProfile(userId string, profile *Profile) *model.AppError {
@@ -169,6 +256,7 @@ func (p *Plugin) deleteProfile(userId, profileId string) *model.AppError {
 	return p.API.KVDelete(getProfileKey(userId, profileId))
 }
 
+// Get an array of all character profiles, and also the real one.
 func (p *Plugin) listProfiles(userId string) ([]Profile, *model.AppError) {
 	keys, err := p.getKeysAfterPrefix(getProfileKey(userId, ""))
 	if err != nil {
@@ -176,13 +264,32 @@ func (p *Plugin) listProfiles(userId string) ([]Profile, *model.AppError) {
 	}
 	ret := make([]Profile, 0)
 	for _, key := range keys {
-		profile, err := p.getProfile(userId, key, true)
+		profile, err := p.getProfile(userId, key, PROFILE_CHARACTER|PROFILE_CORRUPT)
 		if err != nil {
 			return nil, err
 		}
 		ret = append(ret, *profile)
 	}
+	profile, err := p.getProfile(userId, "", PROFILE_ME)
+	if err != nil {
+		return nil, err
+	}
+	ret = append(ret, *profile)
+	sortProfiles(ret)
 	return ret, nil
+}
+
+// Sort profiles by identifier, except put the real profile last.
+func sortProfiles(profiles []Profile) {
+	sort.Slice(profiles, func(i, j int) bool {
+		if profiles[i].Status == PROFILE_ME {
+			return false
+		}
+		if profiles[j].Status == PROFILE_ME {
+			return true
+		}
+		return profiles[i].Identifier < profiles[j].Identifier
+	})
 }
 
 func (p *Plugin) getKeysAfterPrefix(prefix string) ([]string, *model.AppError) {
@@ -223,7 +330,7 @@ func (p *Plugin) getDefaultProfileIdentifier(userId, channelId string) (string, 
 }
 
 func (p *Plugin) setDefaultProfileIdentifier(userId, channelId, profileId string) (*Profile, *model.AppError) {
-	profile, err := p.getProfile(userId, profileId, true)
+	profile, err := p.getProfile(userId, profileId, PROFILE_CHARACTER)
 	if err != nil {
 		return nil, err
 	}

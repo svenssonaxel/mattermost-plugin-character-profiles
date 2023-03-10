@@ -106,7 +106,7 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 		var successMessage string
 		if existed {
 			// Modify character profile
-			oldProfile, err := p.getProfile(userId, profileId, false)
+			oldProfile, err := p.getProfile(userId, profileId, PROFILE_CHARACTER|PROFILE_CORRUPT)
 			if err != nil {
 				return "", nil, err
 			}
@@ -139,8 +139,10 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 				return "", nil, appError(fmt.Sprintf("No character profile with identifyer `%s` exists. In order to create it, you must at least provide a display name. Try `/character help` for details.", profileId), nil)
 			}
 			newProfile = Profile{
+				UserId:     userId,
 				Identifier: profileId,
 				Name:       profileDisplayName,
+				Status:     PROFILE_CHARACTER,
 			}
 			successMessage = fmt.Sprintf("Character profile `%s` created with display name \"%s\"", newProfile.Identifier, newProfile.Name)
 			if setPicture {
@@ -182,13 +184,7 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 		if err != nil {
 			return "", nil, err
 		}
-		attachments1 := p.attachmentsFromProfiles(profiles)
-		attachments2, err := p.attachmentsFromRealProfile(userId)
-		if err != nil {
-			return "", nil, err
-		}
-		attachments := append(attachments1, attachments2...)
-		return "## Character profiles", attachments, nil
+		return "## Character profiles", p.attachmentsFromProfiles(profiles), nil
 	}
 
 	// `/character I am haddock`
@@ -208,11 +204,11 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 			if err != nil {
 				return "", nil, err
 			}
-			attachments, err := p.attachmentsFromRealProfile(userId)
+			realProfile, err := p.getProfile(userId, "", PROFILE_ME)
 			if err != nil {
 				return "", nil, err
 			}
-			return "You are now yourself again. Hope that feels ok.", attachments, nil
+			return "You are now yourself again. Hope that feels ok.", p.attachmentsFromProfile(*realProfile), nil
 		} else {
 			newProfile, err := p.setDefaultProfileIdentifier(userId, channelId, newProfileId)
 			if err != nil {
@@ -239,36 +235,49 @@ func appError(message string, err error) *model.AppError {
 	return model.NewAppError("Character Profile Plugin", message, nil, errorMessage, http.StatusBadRequest)
 }
 
-func (p *Plugin) attachmentsFromProfiles(profiles []Profile) []*model.SlackAttachment {
-	ret := make([]*model.SlackAttachment, len(profiles))
-	for i, profile := range profiles {
-		ret[i] = &model.SlackAttachment{
+func (p *Plugin) attachmentFromProfile(profile Profile) *model.SlackAttachment {
+	switch profile.Status {
+	case PROFILE_CHARACTER:
+		return &model.SlackAttachment{
 			Text:     fmt.Sprintf("**%s**\n`%s`", profile.Name, profile.Identifier),
-			ThumbURL: p.profileIconUrl(profile.PictureFileId, false),
+			ThumbURL: p.profileIconUrl(profile, false),
+			Color:    "#5c66ff",
+		}
+	case PROFILE_ME:
+		return &model.SlackAttachment{
+			Text:     fmt.Sprintf("**%s** *(your real profile)*\n`me`, `myself`", profile.Name),
+			ThumbURL: p.profileIconUrl(profile, false),
+			Color:    "#009900",
+		}
+	case PROFILE_CORRUPT:
+		return &model.SlackAttachment{
+			Text:     fmt.Sprintf("**%s** *(corrupt profile)*\n`%s`\nError: %s", profile.Name, profile.Identifier, profile.Error.Error()),
+			ThumbURL: p.profileIconUrl(profile, false),
+			Color:    "#ff0000",
+		}
+	case PROFILE_NONEXISTENT:
+		return &model.SlackAttachment{
+			Text:     fmt.Sprintf("*(profile does not exist)*\n`%s`", profile.Identifier),
+			ThumbURL: p.profileIconUrl(profile, false),
+			Color:    "#ff0000",
+		}
+	default:
+		return &model.SlackAttachment{
+			Text:     fmt.Sprintf("*(BUG in profile)*\n`%s`", profile.Identifier),
+			ThumbURL: "",
+			Color:    "#ff0000",
 		}
 	}
-	return ret
 }
 
 func (p *Plugin) attachmentsFromProfile(profile Profile) []*model.SlackAttachment {
-	return p.attachmentsFromProfiles([]Profile{profile})
+	return []*model.SlackAttachment{p.attachmentFromProfile(profile)}
 }
 
-func (p *Plugin) attachmentsFromRealProfile(userId string) ([]*model.SlackAttachment, *model.AppError) {
-	user, err := p.API.GetUser(userId)
-	if err != nil {
-		return nil, err
+func (p *Plugin) attachmentsFromProfiles(profiles []Profile) []*model.SlackAttachment {
+	ret := make([]*model.SlackAttachment, len(profiles))
+	for i, profile := range profiles {
+		ret[i] = p.attachmentFromProfile(profile)
 	}
-	if user == nil {
-		return nil, appError("Could not fetch user.", nil)
-	}
-	displayName := user.GetDisplayName(model.SHOW_FULLNAME)	// Options are: model.SHOW_USERNAME, model.SHOW_FULLNAME, model.SHOW_NICKNAME_FULLNAME
-	profilePictureURL := fmt.Sprintf("%s/api/v4/users/%s/image", p.siteURL, userId)
-	return []*model.SlackAttachment{
-		{
-			Text:     fmt.Sprintf("**%s** *(this is your real profile)*\n`me`, `myself`", displayName),
-			ThumbURL: profilePictureURL,
-			Color: "#ff0000",
-		},
-	}, nil
+	return ret
 }
