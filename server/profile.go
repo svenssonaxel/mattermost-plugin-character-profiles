@@ -59,13 +59,8 @@ func (p *Plugin) populateProfile(profile *Profile) *model.AppError {
 	return nil
 }
 
-func (p *Plugin) validateProfile(profile *Profile, profileId string) *model.AppError {
+func (profile *Profile) validate(profileId string) *model.AppError {
 	pre := fmt.Sprintf("Failed validating profile `%s`: ", profileId)
-	var err *model.AppError
-	err = p.populateProfile(profile)
-	if err != nil {
-		return appErrorPre(pre, err)
-	}
 	if profile == nil {
 		return appError(pre+"Profile is nil.", nil)
 	}
@@ -218,8 +213,12 @@ func (p *Plugin) getProfile(userId, profileId string, accepted int) (*Profile, *
 	profile.UserId = userId
 	profile.Identifier = profileId
 	profile.Status = PROFILE_CHARACTER
+	populateErr := p.populateProfile(profile)
+	if populateErr != nil {
+		return nil, populateErr
+	}
 	if corruptionErr == nil {
-		validateErr := p.validateProfile(profile, profileId)
+		validateErr := profile.validate(profileId)
 		if validateErr != nil {
 			corruptionErr = appErrorPre(fmt.Sprintf("Profile `%s` is corrupt and needs to be recreated", profileId), validateErr)
 		}
@@ -241,7 +240,11 @@ func (p *Plugin) getProfile(userId, profileId string, accepted int) (*Profile, *
 }
 
 func (p *Plugin) setProfile(userId string, profile *Profile) *model.AppError {
-	err := p.validateProfile(profile, profile.Identifier)
+	err := p.populateProfile(profile)
+	if err != nil {
+		return err
+	}
+	err = profile.validate(profile.Identifier)
 	if err != nil {
 		return err
 	}
