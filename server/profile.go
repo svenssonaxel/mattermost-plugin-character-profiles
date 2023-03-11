@@ -97,6 +97,9 @@ func (profile *Profile) validate(profileId string) *model.AppError {
 			return appErrorPre(pre, err)
 		}
 		post := profile.PicturePost
+		if post == nil {
+			return appError(pre+"The post supposedly holding the profile picture is nil.", nil)
+		}
 		if post.DeleteAt != 0 {
 			return appError(pre+"The post supposedly holding the profile picture is deleted.", nil)
 		}
