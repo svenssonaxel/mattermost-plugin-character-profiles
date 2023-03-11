@@ -131,13 +131,13 @@ func (profile *Profile) validate(profileId string) *model.AppError {
 }
 
 // EncodeToByte returns a profile as a byte array
-func (p *Plugin) EncodeToByte(profile *Profile) []byte {
+func (profile *Profile) EncodeToByte() []byte {
 	b, _ := json.Marshal(profile)
 	return b
 }
 
 // DecodeProfileFromByte tries to create a Profile from a byte array
-func (p *Plugin) DecodeProfileFromByte(b []byte) (*Profile, *model.AppError) {
+func DecodeProfileFromByte(b []byte) (*Profile, *model.AppError) {
 	profile := Profile{}
 	err := json.Unmarshal(b, &profile)
 	if err != nil {
@@ -202,7 +202,7 @@ func (p *Plugin) getProfile(userId, profileId string, accepted int) (*Profile, *
 	}
 
 	// Decode
-	profile, corruptionErr := p.DecodeProfileFromByte(b)
+	profile, corruptionErr := DecodeProfileFromByte(b)
 	// Handle character and corrupt profile
 	if corruptionErr == nil && profile == nil {
 		corruptionErr = appError(fmt.Sprintf("Profile `%s` failed to decode and needs to be recreated.", profileId), nil)
@@ -248,7 +248,7 @@ func (p *Plugin) setProfile(userId string, profile *Profile) *model.AppError {
 	if err != nil {
 		return err
 	}
-	err = p.API.KVSet(getProfileKey(userId, profile.Identifier), p.EncodeToByte(profile))
+	err = p.API.KVSet(getProfileKey(userId, profile.Identifier), profile.EncodeToByte())
 	if err != nil {
 		return err
 	}
