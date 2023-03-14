@@ -21,11 +21,30 @@ type Plugin struct {
 	// setConfiguration for usage.
 	configuration *configuration
 
-	// The Site URL fetched from configuration or empty string
-	siteURL string
+	// Mockable backend, the only thing passed to non-glue code.
+	backend *Backend
+}
+
+func getRealBackendFromPlugin(p *Plugin) (Backend, *model.AppError) {
+	backend := BackendImpl{}
+	maybeSiteURL := p.API.GetConfig().ServiceSettings.SiteURL
+	if maybeSiteURL == nil {
+		return backend, model.NewAppError("backendFromPlugin", "Cannot get Site URL", nil, "", http.StatusInternalServerError)
+	}
+	backend.SiteURL = *maybeSiteURL
+	if p.API == nil {
+		return backend, model.NewAppError("backendFromPlugin", "Cannot get API", nil, "", http.StatusInternalServerError)
+	}
+	backend.API = p.API
+	return backend, nil
 }
 
 func (p *Plugin) OnActivate() error {
+	backend, beErr := getRealBackendFromPlugin(p)
+	if beErr != nil {
+		return beErr
+	}
+	p.backend = &backend
 	err := p.API.RegisterCommand(&model.Command{
 		Trigger:          "character",
 		Description:      "Become a nomad of names, a litany of labels, to master monikers and fabricate fables.",
@@ -37,22 +56,24 @@ func (p *Plugin) OnActivate() error {
 	if err != nil {
 		return err
 	}
-	maybeSiteURL := p.API.GetConfig().ServiceSettings.SiteURL
-	if maybeSiteURL != nil {
-		p.siteURL = *maybeSiteURL
-	}
 	return nil
 }
 
 func (p *Plugin) MessageWillBePosted(_ *plugin.Context, post *model.Post) (*model.Post, string) {
-	return p.ProfiledPost(post, false)
+	if p.backend == nil {
+		return nil, "Backend not initialized"
+	}
+	return ProfiledPost(*p.backend, post, false)
 }
 
 func (p *Plugin) MessageWillBeUpdated(_ *plugin.Context, newPost *model.Post, _ *model.Post) (*model.Post, string) {
-	return p.ProfiledPost(newPost, true)
+	if p.backend == nil {
+		return nil, "Backend not initialized"
+	}
+	return ProfiledPost(*p.backend, newPost, true)
 }
 
-func (p *Plugin) ProfiledPost(post *model.Post, isedited bool) (*model.Post, string) {
+func ProfiledPost(be Backend, post *model.Post, isedited bool) (*model.Post, string) {
 	// Shouldn't really happen.
 	if post == nil {
 		return nil, ""
@@ -71,11 +92,11 @@ func (p *Plugin) ProfiledPost(post *model.Post, isedited bool) (*model.Post, str
 		// This might be a one-off post.
 		profileId := matches[1]
 		actualMessage := matches[2]
-		profile, err := p.getProfile(userId, profileId, PROFILE_CHARACTER|PROFILE_ME)
+		profile, err := getProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_ME)
 		if err == nil && profile != nil {
 			// We found a matching profile, so this is an actual one-off post.
 			ret.Message = actualMessage
-			return p.profilePost(ret, *profile)
+			return profilePost(be, ret, *profile)
 		}
 	}
 
@@ -84,10 +105,10 @@ func (p *Plugin) ProfiledPost(post *model.Post, isedited bool) (*model.Post, str
 	if opiOk {
 		oldProfileIdentifierStr, ok := oldProfileIdentifier.(string)
 		if ok {
-			profile, err := p.getProfile(userId, oldProfileIdentifierStr, PROFILE_CHARACTER)
+			profile, err := getProfile(be, userId, oldProfileIdentifierStr, PROFILE_CHARACTER)
 			if err == nil && profile != nil {
 				// We found a matching profile, so let's update the post with the current settings.
-				return p.profilePost(ret, *profile)
+				return profilePost(be, ret, *profile)
 			}
 		}
 	}
@@ -98,12 +119,12 @@ func (p *Plugin) ProfiledPost(post *model.Post, isedited bool) (*model.Post, str
 
 	// Handle new posts
 	channelId := post.ChannelId
-	profileId, err := p.getDefaultProfileIdentifier(userId, channelId)
+	profileId, err := getDefaultProfileIdentifier(be, userId, channelId)
 	if err == nil {
-		profile, err := p.getProfile(userId, profileId, PROFILE_CHARACTER|PROFILE_ME)
+		profile, err := getProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_ME)
 		if err == nil && profile != nil {
 			// We found a matching profile, so let's apply it to the post.
-			return p.profilePost(ret, *profile)
+			return profilePost(be, ret, *profile)
 		}
 	}
 
@@ -111,7 +132,7 @@ func (p *Plugin) ProfiledPost(post *model.Post, isedited bool) (*model.Post, str
 	return nil, ""
 }
 
-func (p *Plugin) profilePost(post *model.Post, profile Profile) (*model.Post, string) {
+func profilePost(be Backend, post *model.Post, profile Profile) (*model.Post, string) {
 	// Send a normal message with the selected profile
 	switch profile.Status {
 	case PROFILE_ME:
@@ -123,7 +144,7 @@ func (p *Plugin) profilePost(post *model.Post, profile Profile) (*model.Post, st
 	case PROFILE_CHARACTER:
 		post.AddProp("profile_identifier", profile.Identifier)
 		post.AddProp("override_username", profile.Name)
-		post.AddProp("override_icon_url", p.profileIconUrl(profile, false))
+		post.AddProp("override_icon_url", profileIconUrl(be, profile, false))
 		post.AddProp("from_webhook", "true") // Unfortunately we need to pretend this is from a bot, or the username won't get overridden.
 		return post, ""
 	default:
@@ -142,25 +163,26 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	http.ServeFile(w, r, filepath.Join(bundlePath, "assets", r.URL.Path))
 }
 
-func (p *Plugin) profileIconUrl(profile Profile, thumbnail bool) string {
+func profileIconUrl(be Backend, profile Profile, thumbnail bool) string {
+	siteURL := be.GetSiteURL()
 	if profile.Status == PROFILE_CHARACTER {
 		fileId := profile.PictureFileId
 		if fileId == "" {
 			if thumbnail {
-				return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character-thumbnail.jpeg"
+				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character-thumbnail.jpeg"
 			}
-			return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character.png"
+			return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character.png"
 		}
 		if thumbnail {
-			return p.siteURL + "/api/v4/files/" + fileId + "/thumbnail"
+			return siteURL + "/api/v4/files/" + fileId + "/thumbnail"
 		}
-		return p.siteURL + "/api/v4/files/" + fileId
+		return siteURL + "/api/v4/files/" + fileId
 	}
 	if profile.Status == PROFILE_ME {
-		return p.siteURL + "/api/v4/users/" + profile.UserId + "/image" // todo how to get thumbnail?
+		return siteURL + "/api/v4/users/" + profile.UserId + "/image" // todo how to get thumbnail?
 	}
 	if thumbnail {
-		return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign-thumbnail.jpg"
+		return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign-thumbnail.jpg"
 	}
-	return p.siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign.jpg"
+	return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign.jpg"
 }

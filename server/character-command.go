@@ -16,15 +16,15 @@ import (
 var helpText string
 
 func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
-	if p.API == nil {
-		return nil, appError("Cannot access the plugin API.", nil)
+	if p.backend == nil {
+		return nil, appError("Cannot access the plugin backend.", nil)
 	}
 
 	userId := args.UserId
 	channelId := args.ChannelId
 	teamId := args.TeamId
 
-	responseMessage, attachments, err := doExecuteCommand(p, args.Command, userId, channelId, teamId, args.RootId)
+	responseMessage, attachments, err := doExecuteCommand(*p.backend, args.Command, userId, channelId, teamId, args.RootId)
 
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func isMe(id string) bool {
 	return id == "" || id == "myself" || id == "me"
 }
 
-func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId string) (string, []*model.SlackAttachment, *model.AppError) {
+func doExecuteCommand(be Backend, command, userId, channelId, teamId, rootId string) (string, []*model.SlackAttachment, *model.AppError) {
 
 	// Make sure command begins correctly with `/character `
 	matches := regexp.MustCompile(`^/character (.*)$`).FindStringSubmatch(command)
@@ -73,7 +73,7 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 		if isMe(profileId) {
 			return "", nil, appError("You cannot use `myself` or `me` as a character profile identifyer. Use the Mattermost built-in functionality to change the display name or profile picture for your real Mattermost profile.", nil)
 		}
-		existed, err := p.profileExists(userId, profileId)
+		existed, err := profileExists(be, userId, profileId)
 		if err != nil {
 			return "", nil, err
 		}
@@ -86,7 +86,7 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 			if rootId == "" {
 				return "", nil, appError("Setting character profile picture can only be done in a thread, with the parent post containing the picture.", nil)
 			}
-			rootPost, err := p.API.GetPost(rootId)
+			rootPost, err := be.GetPost(rootId)
 			if err != nil {
 				return "", nil, err
 			}
@@ -107,7 +107,7 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 		var successMessage string
 		if existed {
 			// Modify character profile
-			oldProfile, err := p.getProfile(userId, profileId, PROFILE_CHARACTER|PROFILE_CORRUPT)
+			oldProfile, err := getProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_CORRUPT)
 			if err != nil {
 				return "", nil, err
 			}
@@ -151,11 +151,11 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 				successMessage += " and a profile picture"
 			}
 		}
-		err = p.setProfile(userId, &newProfile)
+		err = setProfile(be, userId, &newProfile)
 		if err != nil {
 			return "", nil, err
 		}
-		return successMessage, p.attachmentsFromProfile(newProfile), nil
+		return successMessage, attachmentsFromProfile(be, newProfile), nil
 	}
 
 	// `/character delete haddock`: Delete character profile with identifier `haddock`.
@@ -165,14 +165,14 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 		if isMe(profileId) {
 			return "", nil, appError("Please do not try to delete yourself. If you have suicidal thoughts, call 90101 (Sweden) or +1-800-273-8255 (International).", nil)
 		}
-		exists, err := p.profileExists(userId, profileId)
+		exists, err := profileExists(be, userId, profileId)
 		if err != nil {
 			return "", nil, err
 		}
 		if !exists {
 			return "", nil, appError(fmt.Sprintf("Character profile `%s` does not exist.", profileId), nil)
 		}
-		err = p.deleteProfile(userId, profileId)
+		err = deleteProfile(be, userId, profileId)
 		if err != nil {
 			return "", nil, err
 		}
@@ -181,11 +181,11 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 
 	// `/character list`: List your character profiles.
 	if query == "list" {
-		profiles, err := p.listProfiles(userId)
+		profiles, err := listProfiles(be, userId)
 		if err != nil {
 			return "", nil, err
 		}
-		return "## Character profiles", p.attachmentsFromProfiles(profiles), nil
+		return "## Character profiles", attachmentsFromProfiles(be, profiles), nil
 	}
 
 	// `/character I am haddock`: Set default character profile identifier for the current channel to `haddock`.
@@ -193,7 +193,7 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 	matches = regexp.MustCompile(`^I am ([a-z]+)$`).FindStringSubmatch(query)
 	if len(matches) == 2 {
 		newProfileId := matches[1]
-		oldProfileId, err := p.getDefaultProfileIdentifier(userId, channelId)
+		oldProfileId, err := getDefaultProfileIdentifier(be, userId, channelId)
 		if err != nil {
 			return "", nil, err
 		}
@@ -201,17 +201,17 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 			if isMe(oldProfileId) {
 				return "You are already yourself. Multiplicity was a fun movie, but let's leave it at that.", nil, nil
 			}
-			err := p.removeDefaultProfile(userId, channelId)
+			err := removeDefaultProfile(be, userId, channelId)
 			if err != nil {
 				return "", nil, err
 			}
-			realProfile, err := p.getProfile(userId, "", PROFILE_ME)
+			realProfile, err := getProfile(be, userId, "", PROFILE_ME)
 			if err != nil {
 				return "", nil, err
 			}
-			return "You are now yourself again. Hope that feels ok.", p.attachmentsFromProfile(*realProfile), nil
+			return "You are now yourself again. Hope that feels ok.", attachmentsFromProfile(be, *realProfile), nil
 		} else {
-			newProfile, err := p.setDefaultProfileIdentifier(userId, channelId, newProfileId)
+			newProfile, err := setDefaultProfileIdentifier(be, userId, channelId, newProfileId)
 			if err != nil {
 				return "", nil, err
 			}
@@ -221,24 +221,24 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 			if oldProfileId == newProfileId {
 				return fmt.Sprintf("You are already \"%s\", and if that's not enough you should've rolled better stats.", newProfile.Name), nil, nil
 			}
-			return fmt.Sprintf("You are now known as \"%s\".", newProfile.Name), p.attachmentsFromProfile(*newProfile), nil
+			return fmt.Sprintf("You are now known as \"%s\".", newProfile.Name), attachmentsFromProfile(be, *newProfile), nil
 		}
 	}
 
 	// `/character who am I`: List default character profiles for the channels in this team.
 	if query == "who am I" {
-		channels, err := p.API.GetChannelsForTeamForUser(teamId, userId, false)
+		channels, err := be.GetChannelsForTeamForUser(teamId, userId, false)
 		if err != nil {
 			return "", nil, err
 		}
 		profileIdToChannelMentions := map[string][]string{}
 		// Get default profile identifiers for all channels in this team.
 		for _, channel := range channels {
-			defaultProfileIdentifier, err := p.getDefaultProfileIdentifier(userId, channel.Id)
+			defaultProfileIdentifier, err := getDefaultProfileIdentifier(be, userId, channel.Id)
 			if err != nil {
 				return "", nil, err
 			}
-			channelMention, err := p.channelMention(channel, userId, teamId)
+			channelMention, err := channelMention(be, channel, userId, teamId)
 			if err != nil {
 				return "", nil, err
 			}
@@ -247,7 +247,7 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 		// Get profiles for all default profile identifiers and sort them.
 		profiles := []Profile{}
 		for profileId := range profileIdToChannelMentions {
-			profile, err := p.getProfile(userId, profileId, PROFILE_CHARACTER|PROFILE_ME|PROFILE_CORRUPT|PROFILE_NONEXISTENT)
+			profile, err := getProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_ME|PROFILE_CORRUPT|PROFILE_NONEXISTENT)
 			if err != nil {
 				return "", nil, err
 			}
@@ -264,7 +264,7 @@ func doExecuteCommand(p *Plugin, command, userId, channelId, teamId, rootId stri
 			sortChannelMentions(channelMentions)
 			// Join channel mentions with commas.
 			channelNamesString := "\nDefault profile in: " + strings.Join(channelMentions, ", ")
-			attachment := p.attachmentFromProfile(profile)
+			attachment := attachmentFromProfile(be, profile)
 			attachment.Text += channelNamesString
 			attachments[i] = attachment
 		}
@@ -282,30 +282,30 @@ func appError(message string, err error) *model.AppError {
 	return model.NewAppError("Character Profile Plugin", message, nil, errorMessage, http.StatusBadRequest)
 }
 
-func (p *Plugin) attachmentFromProfile(profile Profile) *model.SlackAttachment {
+func attachmentFromProfile(be Backend, profile Profile) *model.SlackAttachment {
 	switch profile.Status {
 	case PROFILE_CHARACTER:
 		return &model.SlackAttachment{
 			Text:     fmt.Sprintf("**%s**\n`%s`", profile.Name, profile.Identifier),
-			ThumbURL: p.profileIconUrl(profile, false),
+			ThumbURL: profileIconUrl(be, profile, false),
 			Color:    "#5c66ff",
 		}
 	case PROFILE_ME:
 		return &model.SlackAttachment{
 			Text:     fmt.Sprintf("**%s** *(your real profile)*\n`me`, `myself`", profile.Name),
-			ThumbURL: p.profileIconUrl(profile, false),
+			ThumbURL: profileIconUrl(be, profile, false),
 			Color:    "#009900",
 		}
 	case PROFILE_CORRUPT:
 		return &model.SlackAttachment{
 			Text:     fmt.Sprintf("**%s** *(corrupt profile)*\n`%s`\nError: %s", profile.Name, profile.Identifier, profile.Error.Error()),
-			ThumbURL: p.profileIconUrl(profile, false),
+			ThumbURL: profileIconUrl(be, profile, false),
 			Color:    "#ff0000",
 		}
 	case PROFILE_NONEXISTENT:
 		return &model.SlackAttachment{
 			Text:     fmt.Sprintf("*(profile does not exist)*\n`%s`", profile.Identifier),
-			ThumbURL: p.profileIconUrl(profile, false),
+			ThumbURL: profileIconUrl(be, profile, false),
 			Color:    "#ff0000",
 		}
 	default:
@@ -317,24 +317,24 @@ func (p *Plugin) attachmentFromProfile(profile Profile) *model.SlackAttachment {
 	}
 }
 
-func (p *Plugin) attachmentsFromProfile(profile Profile) []*model.SlackAttachment {
-	return []*model.SlackAttachment{p.attachmentFromProfile(profile)}
+func attachmentsFromProfile(be Backend, profile Profile) []*model.SlackAttachment {
+	return []*model.SlackAttachment{attachmentFromProfile(be, profile)}
 }
 
-func (p *Plugin) attachmentsFromProfiles(profiles []Profile) []*model.SlackAttachment {
+func attachmentsFromProfiles(be Backend, profiles []Profile) []*model.SlackAttachment {
 	ret := make([]*model.SlackAttachment, len(profiles))
 	for i, profile := range profiles {
-		ret[i] = p.attachmentFromProfile(profile)
+		ret[i] = attachmentFromProfile(be, profile)
 	}
 	return ret
 }
 
-func (p *Plugin) channelMention(channel *model.Channel, userId string, teamId string) (string, *model.AppError) {
+func channelMention(be Backend, channel *model.Channel, userId string, teamId string) (string, *model.AppError) {
 	switch channel.Type {
 	case model.CHANNEL_OPEN, model.CHANNEL_PRIVATE:
 		return fmt.Sprintf("~%s", channel.Name), nil
 	case model.CHANNEL_DIRECT:
-		members, err := p.API.GetChannelMembers(channel.Id, 0, 100)
+		members, err := be.GetChannelMembers(channel.Id, 0, 100)
 		if err != nil {
 			return "", err
 		}
@@ -346,7 +346,7 @@ func (p *Plugin) channelMention(channel *model.Channel, userId string, teamId st
 		}
 		for _, member := range *members {
 			if member.UserId != userId {
-				user, err := p.API.GetUser(member.UserId)
+				user, err := be.GetUser(member.UserId)
 				if err != nil {
 					return "", err
 				}
@@ -358,7 +358,7 @@ func (p *Plugin) channelMention(channel *model.Channel, userId string, teamId st
 		}
 		return "", appError(fmt.Sprintf("Channel %s has no members other than %s.", channel.Id, userId), nil)
 	case model.CHANNEL_GROUP:
-		team, err := p.API.GetTeam(teamId)
+		team, err := be.GetTeam(teamId)
 		if err != nil {
 			return "", err
 		}
@@ -367,7 +367,7 @@ func (p *Plugin) channelMention(channel *model.Channel, userId string, teamId st
 		}
 		teamName := team.Name
 		memberNames := []string{}
-		members, err := p.API.GetChannelMembers(channel.Id, 0, 100)
+		members, err := be.GetChannelMembers(channel.Id, 0, 100)
 		if err != nil {
 			return "", err
 		}
@@ -378,7 +378,7 @@ func (p *Plugin) channelMention(channel *model.Channel, userId string, teamId st
 			if member.UserId == userId {
 				continue
 			}
-			user, err := p.API.GetUser(member.UserId)
+			user, err := be.GetUser(member.UserId)
 			if err != nil {
 				return "", err
 			}
@@ -400,7 +400,7 @@ func (p *Plugin) channelMention(channel *model.Channel, userId string, teamId st
 			memberNames[ml-2] = memberNames[ml-2] + " and " + memberNames[ml-1]
 			memberNames = memberNames[:ml-1]
 		}
-		return fmt.Sprintf("[Group Chat](%s/%s/messages/%s) with %s", p.siteURL, teamName, channel.Name, strings.Join(memberNames, ", ")), nil
+		return fmt.Sprintf("[Group Chat](%s/%s/messages/%s) with %s", be.GetSiteURL(), teamName, channel.Name, strings.Join(memberNames, ", ")), nil
 	default:
 		return "", appError(fmt.Sprintf("Unknown channel type %s.", channel.Type), nil)
 	}

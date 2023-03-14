@@ -32,14 +32,14 @@ type Profile struct {
 	Error           *model.AppError `json:"-"` // not stored. Must be set if Status == PROFILE_NONEXISTENT || Status == PROFILE_CORRUPTED.
 }
 
-func (p *Plugin) populateProfile(profile *Profile) *model.AppError {
+func populateProfile(be Backend, profile *Profile) *model.AppError {
 	if profile.PictureFileId == "" {
 		return nil
 	}
 	pre := fmt.Sprintf("Failed to populate profile `%s`: ", profile.Identifier)
 	var err *model.AppError
 	if profile.PictureFileInfo == nil {
-		profile.PictureFileInfo, err = p.API.GetFileInfo(profile.PictureFileId)
+		profile.PictureFileInfo, err = be.GetFileInfo(profile.PictureFileId)
 		if err != nil {
 			return appErrorPre(pre, err)
 		}
@@ -48,7 +48,7 @@ func (p *Plugin) populateProfile(profile *Profile) *model.AppError {
 		return appError(pre+"Could not populate PictureFileInfo", nil)
 	}
 	if profile.PicturePost == nil {
-		profile.PicturePost, err = p.API.GetPost(profile.PictureFileInfo.PostId)
+		profile.PicturePost, err = be.GetPost(profile.PictureFileInfo.PostId)
 		if err != nil {
 			return appErrorPre(pre, err)
 		}
@@ -153,19 +153,19 @@ func getProfileKey(userId, profileId string) string {
 	return fmt.Sprintf("profile_%s_%s", userId, profileId)
 }
 
-func (p *Plugin) profileExists(userId, profileId string) (bool, *model.AppError) {
-	b, err := p.API.KVGet(getProfileKey(userId, profileId))
+func profileExists(be Backend, userId, profileId string) (bool, *model.AppError) {
+	b, err := be.KVGet(getProfileKey(userId, profileId))
 	if err != nil {
 		return false, err
 	}
 	return b != nil, nil
 }
 
-func (p *Plugin) getProfile(userId, profileId string, accepted int) (*Profile, *model.AppError) {
+func getProfile(be Backend, userId, profileId string, accepted int) (*Profile, *model.AppError) {
 	// Handle the real profile
 	if isMe(profileId) {
 		if accepted&PROFILE_ME != 0 {
-			user, err := p.API.GetUser(userId)
+			user, err := be.GetUser(userId)
 			if err != nil {
 				return nil, err
 			}
@@ -184,7 +184,7 @@ func (p *Plugin) getProfile(userId, profileId string, accepted int) (*Profile, *
 	}
 
 	// Try to fetch profile
-	b, err := p.API.KVGet(getProfileKey(userId, profileId))
+	b, err := be.KVGet(getProfileKey(userId, profileId))
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func (p *Plugin) getProfile(userId, profileId string, accepted int) (*Profile, *
 	profile.UserId = userId
 	profile.Identifier = profileId
 	profile.Status = PROFILE_CHARACTER
-	populateErr := p.populateProfile(profile)
+	populateErr := populateProfile(be, profile)
 	if populateErr != nil {
 		return nil, populateErr
 	}
@@ -242,8 +242,8 @@ func (p *Plugin) getProfile(userId, profileId string, accepted int) (*Profile, *
 	}
 }
 
-func (p *Plugin) setProfile(userId string, profile *Profile) *model.AppError {
-	err := p.populateProfile(profile)
+func setProfile(be Backend, userId string, profile *Profile) *model.AppError {
+	err := populateProfile(be, profile)
 	if err != nil {
 		return err
 	}
@@ -251,32 +251,32 @@ func (p *Plugin) setProfile(userId string, profile *Profile) *model.AppError {
 	if err != nil {
 		return err
 	}
-	err = p.API.KVSet(getProfileKey(userId, profile.Identifier), profile.EncodeToByte())
+	err = be.KVSet(getProfileKey(userId, profile.Identifier), profile.EncodeToByte())
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (p *Plugin) deleteProfile(userId, profileId string) *model.AppError {
-	return p.API.KVDelete(getProfileKey(userId, profileId))
+func deleteProfile(be Backend, userId, profileId string) *model.AppError {
+	return be.KVDelete(getProfileKey(userId, profileId))
 }
 
 // Get an array of all character profiles, and also the real one.
-func (p *Plugin) listProfiles(userId string) ([]Profile, *model.AppError) {
-	keys, err := p.getKeysAfterPrefix(getProfileKey(userId, ""))
+func listProfiles(be Backend, userId string) ([]Profile, *model.AppError) {
+	keys, err := getKeysAfterPrefix(be, getProfileKey(userId, ""))
 	if err != nil {
 		return nil, err
 	}
 	ret := make([]Profile, 0)
 	for _, key := range keys {
-		profile, err := p.getProfile(userId, key, PROFILE_CHARACTER|PROFILE_CORRUPT)
+		profile, err := getProfile(be, userId, key, PROFILE_CHARACTER|PROFILE_CORRUPT)
 		if err != nil {
 			return nil, err
 		}
 		ret = append(ret, *profile)
 	}
-	profile, err := p.getProfile(userId, "", PROFILE_ME)
+	profile, err := getProfile(be, userId, "", PROFILE_ME)
 	if err != nil {
 		return nil, err
 	}
@@ -298,11 +298,11 @@ func sortProfiles(profiles []Profile) {
 	})
 }
 
-func (p *Plugin) getKeysAfterPrefix(prefix string) ([]string, *model.AppError) {
+func getKeysAfterPrefix(be Backend, prefix string) ([]string, *model.AppError) {
 	var ret []string
 	i := 0
 	for {
-		keys, appErr := p.API.KVList(i, perPage)
+		keys, appErr := be.KVList(i, perPage)
 		if appErr != nil {
 			return nil, appErr
 		}
@@ -323,24 +323,24 @@ func getDefaultProfileKey(userId, channelId string) string {
 	return fmt.Sprintf("defaultprofile_%s_%s", userId, channelId)
 }
 
-func (p *Plugin) removeDefaultProfile(userId, channelId string) *model.AppError {
-	return p.API.KVDelete(getDefaultProfileKey(userId, channelId))
+func removeDefaultProfile(be Backend, userId, channelId string) *model.AppError {
+	return be.KVDelete(getDefaultProfileKey(userId, channelId))
 }
 
-func (p *Plugin) getDefaultProfileIdentifier(userId, channelId string) (string, *model.AppError) {
-	b, err := p.API.KVGet(getDefaultProfileKey(userId, channelId))
+func getDefaultProfileIdentifier(be Backend, userId, channelId string) (string, *model.AppError) {
+	b, err := be.KVGet(getDefaultProfileKey(userId, channelId))
 	if err != nil {
 		return "", err
 	}
 	return string(b), nil
 }
 
-func (p *Plugin) setDefaultProfileIdentifier(userId, channelId, profileId string) (*Profile, *model.AppError) {
-	profile, err := p.getProfile(userId, profileId, PROFILE_CHARACTER)
+func setDefaultProfileIdentifier(be Backend, userId, channelId, profileId string) (*Profile, *model.AppError) {
+	profile, err := getProfile(be, userId, profileId, PROFILE_CHARACTER)
 	if err != nil {
 		return nil, err
 	}
-	err = p.API.KVSet(getDefaultProfileKey(userId, channelId), []byte(profileId))
+	err = be.KVSet(getDefaultProfileKey(userId, channelId), []byte(profileId))
 	if err != nil {
 		return nil, appError("", err)
 	}
