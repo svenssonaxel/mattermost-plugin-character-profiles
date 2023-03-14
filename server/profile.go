@@ -347,6 +347,30 @@ func setDefaultProfileIdentifier(be Backend, userId, channelId, profileId string
 	return profile, nil
 }
 
+func profileIconUrl(be Backend, profile Profile, thumbnail bool) string {
+	siteURL := be.GetSiteURL()
+	if profile.Status == PROFILE_CHARACTER {
+		fileId := profile.PictureFileId
+		if fileId == "" {
+			if thumbnail {
+				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character-thumbnail.jpeg"
+			}
+			return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character.png"
+		}
+		if thumbnail {
+			return siteURL + "/api/v4/files/" + fileId + "/thumbnail"
+		}
+		return siteURL + "/api/v4/files/" + fileId
+	}
+	if profile.Status == PROFILE_ME {
+		return siteURL + "/api/v4/users/" + profile.UserId + "/image" // todo how to get thumbnail?
+	}
+	if thumbnail {
+		return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign-thumbnail.jpg"
+	}
+	return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign.jpg"
+}
+
 func appErrorPre(prefix string, err *model.AppError) *model.AppError {
 	if err == nil {
 		return nil

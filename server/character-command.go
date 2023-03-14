@@ -3,48 +3,15 @@ package main
 import (
 	_ "embed"
 	"fmt"
-	"net/http"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/mattermost/mattermost-server/v5/model"
-	"github.com/mattermost/mattermost-server/v5/plugin"
 )
 
 //go:embed helptext.md
 var helpText string
-
-func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
-	if p.backend == nil {
-		return nil, appError("Cannot access the plugin backend.", nil)
-	}
-
-	userId := args.UserId
-	channelId := args.ChannelId
-	teamId := args.TeamId
-
-	responseMessage, attachments, err := doExecuteCommand(*p.backend, args.Command, userId, channelId, teamId, args.RootId)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if responseMessage != "" {
-		return &model.CommandResponse{
-			Username: "Character Profiles",
-			// todo IconURL:
-			ResponseType: model.COMMAND_RESPONSE_TYPE_EPHEMERAL,
-			Text:         responseMessage,
-			Props: map[string]interface{}{
-				"from_webhook": "true",
-			},
-			Attachments: attachments,
-		}, nil
-	}
-
-	return nil, appError("Unexpectedly got no return value from doExecuteCommand", nil)
-}
 
 func isMe(id string) bool {
 	return id == "" || id == "myself" || id == "me"
@@ -272,14 +239,6 @@ func doExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 	}
 
 	return "", nil, appError("Unrecognized command. Try `/character help`.", nil)
-}
-
-func appError(message string, err error) *model.AppError {
-	errorMessage := ""
-	if err != nil {
-		errorMessage = err.Error()
-	}
-	return model.NewAppError("Character Profile Plugin", message, nil, errorMessage, http.StatusBadRequest)
 }
 
 func attachmentFromProfile(be Backend, profile Profile) *model.SlackAttachment {
