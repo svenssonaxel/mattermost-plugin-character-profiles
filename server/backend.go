@@ -16,9 +16,9 @@ type Backend interface {
 	GetSiteURL() string
 	GetTeam(id string) (*model.Team, *model.AppError)
 	GetUser(id string) (*model.User, *model.AppError)
+	KVCompareAndSet(key string, oldValue, newValue []byte) (bool, *model.AppError)
 	KVDelete(key string) *model.AppError
 	KVGet(key string) ([]byte, *model.AppError)
-	KVList(page, perPage int) ([]string, *model.AppError)
 	KVSet(key string, value []byte) *model.AppError
 }
 
@@ -48,14 +48,14 @@ func (b BackendImpl) GetTeam(id string) (*model.Team, *model.AppError) {
 func (b BackendImpl) GetUser(id string) (*model.User, *model.AppError) {
 	return b.API.GetUser(id)
 }
+func (b BackendImpl) KVCompareAndSet(key string, oldValue, newValue []byte) (bool, *model.AppError) {
+	return b.API.KVCompareAndSet(key, oldValue, newValue)
+}
 func (b BackendImpl) KVDelete(key string) *model.AppError {
 	return b.API.KVDelete(key)
 }
 func (b BackendImpl) KVGet(key string) ([]byte, *model.AppError) {
 	return b.API.KVGet(key)
-}
-func (b BackendImpl) KVList(page, perPage int) ([]string, *model.AppError) {
-	return b.API.KVList(page, perPage)
 }
 func (b BackendImpl) KVSet(key string, value []byte) *model.AppError {
 	return b.API.KVSet(key, value)

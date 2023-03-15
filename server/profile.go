@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
-	"strings"
 
 	"github.com/mattermost/mattermost-server/v5/model"
 )
@@ -154,11 +153,11 @@ func getProfileKey(userId, profileId string) string {
 }
 
 func profileExists(be Backend, userId, profileId string) (bool, *model.AppError) {
-	b, err := be.KVGet(getProfileKey(userId, profileId))
+	profileIds, err := getProfileIds(be, userId)
 	if err != nil {
 		return false, err
 	}
-	return b != nil, nil
+	return stringArrayContains(profileIds, profileId), nil
 }
 
 func getProfile(be Backend, userId, profileId string, accepted int) (*Profile, *model.AppError) {
@@ -188,6 +187,10 @@ func getProfile(be Backend, userId, profileId string, accepted int) (*Profile, *
 	if err != nil {
 		return nil, err
 	}
+
+	// Here, we could call `profileExists` to check if the profile exists in the
+	// id list, but that would require an extra database call and is not
+	// necessary.
 
 	// Handle nonexistent profile
 	if b == nil {
@@ -255,16 +258,24 @@ func setProfile(be Backend, userId string, profile *Profile) *model.AppError {
 	if err != nil {
 		return err
 	}
+	err = addProfileId(be, userId, profile.Identifier)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func deleteProfile(be Backend, userId, profileId string) *model.AppError {
+	err := removeProfileId(be, userId, profileId)
+	if err != nil {
+		return err
+	}
 	return be.KVDelete(getProfileKey(userId, profileId))
 }
 
 // Get an array of all character profiles, and also the real one.
 func listProfiles(be Backend, userId string) ([]Profile, *model.AppError) {
-	keys, err := getKeysAfterPrefix(be, getProfileKey(userId, ""))
+	keys, err := getProfileIds(be, userId)
 	if err != nil {
 		return nil, err
 	}
@@ -296,27 +307,6 @@ func sortProfiles(profiles []Profile) {
 		}
 		return profiles[i].Identifier < profiles[j].Identifier
 	})
-}
-
-func getKeysAfterPrefix(be Backend, prefix string) ([]string, *model.AppError) {
-	var ret []string
-	i := 0
-	for {
-		keys, appErr := be.KVList(i, perPage)
-		if appErr != nil {
-			return nil, appErr
-		}
-		for _, key := range keys {
-			if strings.HasPrefix(key, prefix) {
-				ret = append(ret, strings.TrimPrefix(key, prefix))
-			}
-		}
-		if len(keys) < perPage {
-			break
-		}
-		i++
-	}
-	return ret, nil
 }
 
 func getDefaultProfileKey(userId, channelId string) string {
@@ -378,4 +368,89 @@ func appErrorPre(prefix string, err *model.AppError) *model.AppError {
 	errCopy := *err
 	errCopy.Message = fmt.Sprintf("%s: %s", prefix, err.Message)
 	return &errCopy
+}
+
+// Handle list of profile ids
+
+func ProfileIdsKey(userId string) string {
+	return fmt.Sprintf("profilelist_%s", userId)
+}
+
+func getProfileIds(be Backend, userId string) ([]string, *model.AppError) {
+	b, err := be.KVGet(ProfileIdsKey(userId))
+	if err != nil {
+		return nil, err
+	}
+	if b == nil {
+		return []string{}, nil
+	}
+	var ret []string
+	jsonErr := json.Unmarshal(b, &ret)
+	if jsonErr != nil {
+		return nil, appError("Failed to decode profile list.", jsonErr)
+	}
+	return ret, nil
+}
+
+func setProfileIds(be Backend, userId string, oldIds, newIds []string) *model.AppError {
+	oldIdsJson, oErr := json.Marshal(oldIds)
+	if oErr != nil {
+		return appError("Failed to encode old profile list.", oErr)
+	}
+	if len(oldIds) == 0 {
+		oldIdsJson = nil
+	}
+	newIdsJson, nErr := json.Marshal(newIds)
+	if nErr != nil {
+		return appError("Failed to encode new profile list.", nErr)
+	}
+	ok, cErr := be.KVCompareAndSet(ProfileIdsKey(userId), oldIdsJson, newIdsJson)
+	if cErr != nil {
+		return cErr
+	}
+	if !ok {
+		return appError("Failed to update profile list.", nil)
+	}
+	return nil
+}
+
+func stringArrayContains(arr []string, s string) bool {
+	for _, v := range arr {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func addProfileId(be Backend, userId, profileId string) *model.AppError {
+	oldIds, err := getProfileIds(be, userId)
+	if err != nil {
+		return err
+	}
+	if stringArrayContains(oldIds, profileId) {
+		return nil
+	}
+	newIds := append(oldIds, profileId)
+	sort.Slice(newIds, func(i, j int) bool {
+		return newIds[i] < newIds[j]
+	})
+	return setProfileIds(be, userId, oldIds, newIds)
+}
+
+func removeProfileId(be Backend, userId, profileId string) *model.AppError {
+	oldIds, err := getProfileIds(be, userId)
+	if err != nil {
+		return err
+	}
+	if !stringArrayContains(oldIds, profileId) {
+		return nil
+	}
+	newIds := make([]string, 0)
+	for _, id := range oldIds {
+		if id != profileId {
+			newIds = append(newIds, id)
+		}
+	}
+	return setProfileIds(be, userId, oldIds, newIds)
 }
