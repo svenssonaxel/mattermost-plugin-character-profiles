@@ -33,7 +33,7 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 	channelId := args.ChannelId
 	teamId := args.TeamId
 
-	responseMessage, attachments, err := doExecuteCommand(*p.backend, args.Command, userId, channelId, teamId, args.RootId)
+	responseMessage, attachments, err := DoExecuteCommand(*p.backend, args.Command, userId, channelId, teamId, args.RootId)
 
 	if err != nil {
 		return nil, err

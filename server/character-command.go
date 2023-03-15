@@ -17,7 +17,7 @@ func isMe(id string) bool {
 	return id == "" || id == "myself" || id == "me"
 }
 
-func doExecuteCommand(be Backend, command, userId, channelId, teamId, rootId string) (string, []*model.SlackAttachment, *model.AppError) {
+func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId string) (string, []*model.SlackAttachment, *model.AppError) {
 
 	// Make sure command begins correctly with `/character `
 	matches := regexp.MustCompile(`^/character (.*)$`).FindStringSubmatch(command)
