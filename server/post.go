@@ -69,7 +69,7 @@ func profilePost(be Backend, post *model.Post, profile Profile) (*model.Post, st
 	// Send a normal message with the selected profile
 	switch profile.Status {
 	case PROFILE_ME:
-		post.AddProp("profile_identifier", "myself")
+		post.AddProp("profile_identifier", nil)
 		post.AddProp("override_username", nil)
 		post.AddProp("override_icon_url", nil)
 		post.AddProp("from_webhook", nil)
