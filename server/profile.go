@@ -393,18 +393,21 @@ func getProfileIds(be Backend, userId string) ([]string, *model.AppError) {
 }
 
 func setProfileIds(be Backend, userId string, oldIds, newIds []string) *model.AppError {
+	key := ProfileIdsKey(userId)
+	// Initialize if not already done
+	_, iErr := be.KVCompareAndSet(key, nil, []byte{91, 93})
+	if iErr != nil {
+		return appError("Failed to initialize profile list.", iErr)
+	}
 	oldIdsJson, oErr := json.Marshal(oldIds)
 	if oErr != nil {
 		return appError("Failed to encode old profile list.", oErr)
-	}
-	if len(oldIds) == 0 {
-		oldIdsJson = nil
 	}
 	newIdsJson, nErr := json.Marshal(newIds)
 	if nErr != nil {
 		return appError("Failed to encode new profile list.", nErr)
 	}
-	ok, cErr := be.KVCompareAndSet(ProfileIdsKey(userId), oldIdsJson, newIdsJson)
+	ok, cErr := be.KVCompareAndSet(key, oldIdsJson, newIdsJson)
 	if cErr != nil {
 		return cErr
 	}

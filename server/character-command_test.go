@@ -71,6 +71,15 @@ func TestScenario1(t *testing.T) {
 		[]tAtt{{"**user-number-one** *(your real profile)*\n`me`, `myself`",
 			green, user1image},
 		})
+	// Create a new profile, then delete it
+	cmd(be, "/character someone=Someone", user1, channel1, team1, "", t,
+		"Character profile `someone` created with display name \"Someone\"",
+		[]tAtt{{"**Someone**\n`someone`",
+			blue, characterPng},
+		})
+	cmd(be, "/character delete someone", user1, channel1, team1, "", t,
+		"Deleted character profile `someone`.",
+		[]tAtt{})
 	// Create a new profile, then set its profile picture in a separate command
 	cmd(be, "/character haddock=Captain Haddock", user1, channel1, team1, "", t,
 		"Character profile `haddock` created with display name \"Captain Haddock\"",
