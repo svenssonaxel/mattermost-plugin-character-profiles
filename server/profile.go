@@ -44,15 +44,15 @@ func populateProfile(be Backend, profile *Profile) *model.AppError {
 		}
 	}
 	if profile.PictureFileInfo == nil {
-		return appError(pre+"Could not populate PictureFileInfo", nil)
+		return appError(pre+"Could not find information about the profile picture file.", nil)
 	}
 	if profile.PicturePost == nil {
-		profile.PicturePost, err = be.GetPost(profile.PictureFileInfo.PostId)
+		profile.PicturePost, err = GetPostIfExists(be, profile.PictureFileInfo.PostId)
 		if err != nil {
 			return appErrorPre(pre, err)
 		}
 		if profile.PicturePost == nil {
-			return appError(pre+"Could not populate PicturePost", nil)
+			return appError(pre+"The post supposedly holding the profile picture could not be found, perhaps it's deleted.", nil)
 		}
 	}
 	return nil
@@ -100,6 +100,7 @@ func (profile *Profile) validate(profileId string) *model.AppError {
 			return appError(pre+"The post supposedly holding the profile picture is nil.", nil)
 		}
 		if post.DeleteAt != 0 {
+			// This probably can't happen because the API doesn't return deleted posts.
 			return appError(pre+"The post supposedly holding the profile picture is deleted.", nil)
 		}
 		if len(post.FileIds) != 1 {
@@ -153,11 +154,7 @@ func getProfileKey(userId, profileId string) string {
 }
 
 func profileExists(be Backend, userId, profileId string) (bool, *model.AppError) {
-	profileIds, err := getProfileIds(be, userId)
-	if err != nil {
-		return false, err
-	}
-	return stringArrayContains(profileIds, profileId), nil
+	return StrsetHas(be, ProfileIdsKey(userId), profileId)
 }
 
 func getProfile(be Backend, userId, profileId string, accepted int) (*Profile, *model.AppError) {
@@ -220,13 +217,14 @@ func getProfile(be Backend, userId, profileId string, accepted int) (*Profile, *
 	profile.Identifier = profileId
 	profile.Status = PROFILE_CHARACTER
 	populateErr := populateProfile(be, profile)
+	corruptionPre := fmt.Sprintf("Profile `%s` is corrupt and needs to be recreated: ", profileId)
 	if populateErr != nil {
-		return nil, populateErr
+		corruptionErr = appErrorPre(corruptionPre, populateErr)
 	}
 	if corruptionErr == nil {
 		validateErr := profile.validate(profileId)
 		if validateErr != nil {
-			corruptionErr = appErrorPre(fmt.Sprintf("Profile `%s` is corrupt and needs to be recreated", profileId), validateErr)
+			corruptionErr = appErrorPre(corruptionPre, validateErr)
 		}
 	}
 	if corruptionErr != nil {
@@ -258,7 +256,7 @@ func setProfile(be Backend, userId string, profile *Profile) *model.AppError {
 	if err != nil {
 		return err
 	}
-	err = addProfileId(be, userId, profile.Identifier)
+	err = StrsetInsert(be, ProfileIdsKey(userId), profile.Identifier)
 	if err != nil {
 		return err
 	}
@@ -266,7 +264,7 @@ func setProfile(be Backend, userId string, profile *Profile) *model.AppError {
 }
 
 func deleteProfile(be Backend, userId, profileId string) *model.AppError {
-	err := removeProfileId(be, userId, profileId)
+	err := StrsetRemove(be, ProfileIdsKey(userId), profileId)
 	if err != nil {
 		return err
 	}
@@ -275,7 +273,7 @@ func deleteProfile(be Backend, userId, profileId string) *model.AppError {
 
 // Get an array of all character profiles, and also the real one.
 func listProfiles(be Backend, userId string) ([]Profile, *model.AppError) {
-	keys, err := getProfileIds(be, userId)
+	keys, err := StrsetGet(be, ProfileIdsKey(userId))
 	if err != nil {
 		return nil, err
 	}
@@ -361,99 +359,6 @@ func profileIconUrl(be Backend, profile Profile, thumbnail bool) string {
 	return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign.jpg"
 }
 
-func appErrorPre(prefix string, err *model.AppError) *model.AppError {
-	if err == nil {
-		return nil
-	}
-	errCopy := *err
-	errCopy.Message = fmt.Sprintf("%s: %s", prefix, err.Message)
-	return &errCopy
-}
-
-// Handle list of profile ids
-
 func ProfileIdsKey(userId string) string {
 	return fmt.Sprintf("profilelist_%s", userId)
-}
-
-func getProfileIds(be Backend, userId string) ([]string, *model.AppError) {
-	b, err := be.KVGet(ProfileIdsKey(userId))
-	if err != nil {
-		return nil, err
-	}
-	if b == nil {
-		return []string{}, nil
-	}
-	var ret []string
-	jsonErr := json.Unmarshal(b, &ret)
-	if jsonErr != nil {
-		return nil, appError("Failed to decode profile list.", jsonErr)
-	}
-	return ret, nil
-}
-
-func setProfileIds(be Backend, userId string, oldIds, newIds []string) *model.AppError {
-	key := ProfileIdsKey(userId)
-	// Initialize if not already done
-	_, iErr := be.KVCompareAndSet(key, nil, []byte{91, 93})
-	if iErr != nil {
-		return appError("Failed to initialize profile list.", iErr)
-	}
-	oldIdsJson, oErr := json.Marshal(oldIds)
-	if oErr != nil {
-		return appError("Failed to encode old profile list.", oErr)
-	}
-	newIdsJson, nErr := json.Marshal(newIds)
-	if nErr != nil {
-		return appError("Failed to encode new profile list.", nErr)
-	}
-	ok, cErr := be.KVCompareAndSet(key, oldIdsJson, newIdsJson)
-	if cErr != nil {
-		return cErr
-	}
-	if !ok {
-		return appError("Failed to update profile list.", nil)
-	}
-	return nil
-}
-
-func stringArrayContains(arr []string, s string) bool {
-	for _, v := range arr {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
-func addProfileId(be Backend, userId, profileId string) *model.AppError {
-	oldIds, err := getProfileIds(be, userId)
-	if err != nil {
-		return err
-	}
-	if stringArrayContains(oldIds, profileId) {
-		return nil
-	}
-	newIds := append(oldIds, profileId)
-	sort.Slice(newIds, func(i, j int) bool {
-		return newIds[i] < newIds[j]
-	})
-	return setProfileIds(be, userId, oldIds, newIds)
-}
-
-func removeProfileId(be Backend, userId, profileId string) *model.AppError {
-	oldIds, err := getProfileIds(be, userId)
-	if err != nil {
-		return err
-	}
-	if !stringArrayContains(oldIds, profileId) {
-		return nil
-	}
-	newIds := make([]string, 0)
-	for _, id := range oldIds {
-		if id != profileId {
-			newIds = append(newIds, id)
-		}
-	}
-	return setProfileIds(be, userId, oldIds, newIds)
 }

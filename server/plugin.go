@@ -103,6 +103,20 @@ func (p *Plugin) MessageWillBeUpdated(_ *plugin.Context, newPost *model.Post, _ 
 	return ProfiledPost(*p.backend, newPost, true)
 }
 
+func (p *Plugin) MessageHasBeenPosted(_ *plugin.Context, post *model.Post) {
+	err := RegisterPost(*p.backend, post)
+	if err != nil {
+		p.API.LogError("Failed to register post", "error", err.Error())
+	}
+}
+
+func (p *Plugin) MessageHasBeenUpdated(_ *plugin.Context, newPost *model.Post, _ *model.Post) {
+	err := RegisterPost(*p.backend, newPost)
+	if err != nil {
+		p.API.LogError("Failed to register post", "error", err.Error())
+	}
+}
+
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	bundlePath, err := p.API.GetBundlePath()
 	if err != nil {

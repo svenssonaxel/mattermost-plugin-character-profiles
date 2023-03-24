@@ -13,3 +13,19 @@ func appError(message string, err error) *model.AppError {
 	}
 	return model.NewAppError("Character Profile Plugin", message, nil, errorMessage, http.StatusBadRequest)
 }
+
+func errStr(err *model.AppError) string {
+	if err == nil {
+		return "Error is nil"
+	}
+	return err.Where + ": " + err.Message
+}
+
+func appErrorPre(prefix string, err *model.AppError) *model.AppError {
+	if err == nil {
+		return nil
+	}
+	errCopy := *err
+	errCopy.Message = prefix + err.Message
+	return &errCopy
+}

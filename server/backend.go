@@ -20,6 +20,8 @@ type Backend interface {
 	KVDelete(key string) *model.AppError
 	KVGet(key string) ([]byte, *model.AppError)
 	KVSet(key string, value []byte) *model.AppError
+	NewId() string
+	UpdatePost(post *model.Post) (*model.Post, *model.AppError)
 }
 
 type BackendImpl struct {
@@ -59,4 +61,10 @@ func (b BackendImpl) KVGet(key string) ([]byte, *model.AppError) {
 }
 func (b BackendImpl) KVSet(key string, value []byte) *model.AppError {
 	return b.API.KVSet(key, value)
+}
+func (b BackendImpl) NewId() string {
+	return model.NewId()
+}
+func (b BackendImpl) UpdatePost(post *model.Post) (*model.Post, *model.AppError) {
+	return b.API.UpdatePost(post)
 }

@@ -48,7 +48,8 @@ func TestScenario1(t *testing.T) {
 			file1: {Id: file1, CreatorId: user1, CreateAt: 1, UpdateAt: 1, Path: "some-path-to/file1.png", Name: "file1.png", Extension: "png", MimeType: "image/png", PostId: post1},
 			file2: {Id: file2, CreatorId: user1, CreateAt: 2, UpdateAt: 2, Path: "some-path-to/file2.png", Name: "file2.png", Extension: "png", MimeType: "image/png", PostId: post2},
 		},
-		KVStore: map[string][]byte{},
+		IdCounter: new(int),
+		KVStore:   map[string][]byte{},
 		Posts: map[string]*model.Post{
 			post1: {Id: post1, UserId: user1, ChannelId: channel1, FileIds: []string{file1}},
 			post2: {Id: post2, UserId: user1, ChannelId: channel1, FileIds: []string{file2}},
@@ -119,34 +120,42 @@ func TestScenario1(t *testing.T) {
 		[]tAtt{{"**Milou**\n`milou`",
 			blue, file2Png},
 		})
+	// Change the profile picture of the first profile
+	cmd(be, "/character picture haddock", user1, channel1, team1, post2, t,
+		"Character profile `haddock` modified by updating the profile picture",
+		[]tAtt{{"**Captain Haddock**\n`haddock`",
+			blue, file2Png},
+		})
 	// Delete the post holding the profile picture of the second profile
 	be.Posts[post2].DeleteAt = 1
+	// Although both profiles are now corrupt, the first one can be corrected by setting a new profile picture
+	cmd(be, "/character picture haddock", user1, channel1, team1, post1, t,
+		"Character profile `haddock` modified by updating the profile picture",
+		[]tAtt{{"**Captain Haddock**\n`haddock`",
+			blue, file1Png},
+		})
 	// List profiles for user1
 	cmd(be, "/character list", user1, channel1, team1, "", t,
 		"## Character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`",
 				blue, file1Png},
-			{"**Milou** *(corrupt profile)*\n`milou`\nError: Character Profile Plugin: Profile `milou` is corrupt and needs to be recreated: Failed validating profile `milou`: The post supposedly holding the profile picture is deleted., ",
+			{"**Milou** *(corrupt profile)*\n`milou`\nError: Character Profile Plugin: Profile `milou` is corrupt and needs to be recreated: Failed to populate profile `milou`: The post supposedly holding the profile picture could not be found, perhaps it's deleted.",
 				red, nosign},
 			{"**user-number-one** *(your real profile)*\n`me`, `myself`",
 				green, user1image},
 		})
 	// Add a post by user1 to channel1 and check that the first profile is used
-	post3 := "post3_____________________"
-	post(be, t, &model.Post{Id: post3, UserId: user1, ChannelId: channel1, Message: "Hello from Haddock"},
+	post3 := post(be, t, &model.Post{UserId: user1, ChannelId: channel1, Message: "Hello from Haddock"},
 		"haddock", "Captain Haddock", file1Png)
 	// Add a post by user1 to channel2 and check that the default profile is used (because the second profile is corrupt)
-	post4 := "post4_____________________"
-	post(be, t, &model.Post{Id: post4, UserId: user1, ChannelId: channel2, Message: "No hello from Milou"},
+	post(be, t, &model.Post{UserId: user1, ChannelId: channel2, Message: "No hello from Milou"},
 		"", "", "")
 	// Add a one-off post by user1 to channel2 and check that the first profile is used
-	post5 := "post5_____________________"
-	post(be, t, &model.Post{Id: post5, UserId: user1, ChannelId: channel2, Message: "haddock: Hello from Haddock"},
+	post5 := post(be, t, &model.Post{UserId: user1, ChannelId: channel2, Message: "haddock: Hello from Haddock"},
 		"haddock", "Captain Haddock", file1Png)
 	// Add a one-off post by user1 to channel1 and check that the default profile is used
-	post6 := "post6_____________________"
-	post(be, t, &model.Post{Id: post6, UserId: user1, ChannelId: channel1, Message: "me: Hello from user-number-one"},
+	post6 := post(be, t, &model.Post{UserId: user1, ChannelId: channel1, Message: "me: Hello from user-number-one"},
 		"", "", "")
 	// List default profiles for user1
 	cmd(be, "/character who am I", user1, channel1, team1, "", t,
@@ -154,7 +163,7 @@ func TestScenario1(t *testing.T) {
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`\nDefault profile in: ~channel-one",
 				blue, file1Png},
-			{"**Milou** *(corrupt profile)*\n`milou`\nError: Character Profile Plugin: Profile `milou` is corrupt and needs to be recreated: Failed validating profile `milou`: The post supposedly holding the profile picture is deleted., \nDefault profile in: ~channel-two",
+			{"**Milou** *(corrupt profile)*\n`milou`\nError: Character Profile Plugin: Profile `milou` is corrupt and needs to be recreated: Failed to populate profile `milou`: The post supposedly holding the profile picture could not be found, perhaps it's deleted.\nDefault profile in: ~channel-two",
 				red, nosign},
 		})
 	// Delete the second profile
@@ -194,6 +203,41 @@ func TestScenario1(t *testing.T) {
 			{"**user-number-one** *(your real profile)*\n`me`, `myself`\nDefault profile in: ~channel-two",
 				green, user1image},
 		})
+	// Edit a post made by user1 using the first profile, to instead use the default profile
+	editPost(be, t, post5, "me: Actually, hello from me instead", "", "", "")
+	// Edit a post made by user1 using the default profile, to instead use the first profile
+	editPost(be, t, post6, "haddock: Hello from Haddock, again", "haddock", "Captain Haddock", file1Png)
+	// Change the display name of the first profile
+	cmd(be, "/character haddock=Mr Haddock Sr", user1, channel1, team1, "", t,
+		"Character profile `haddock` modified by changing the display name from \"Captain Haddock\" to \"Mr Haddock Sr\"",
+		[]tAtt{{"**Mr Haddock Sr**\n`haddock`",
+			blue, file1Png},
+		})
+	// List profiles for user1
+	cmd(be, "/character list", user1, channel1, team1, "", t,
+		"## Character profiles",
+		[]tAtt{
+			{"**Mr Haddock Sr**\n`haddock`",
+				blue, file1Png},
+			{"**user-number-one** *(your real profile)*\n`me`, `myself`",
+				green, user1image},
+		})
+	// Check that posts previously made using the first profile has the new display name
+	for _, postId := range []string{post3, post6} {
+		msg := fmt.Sprintf("Checking username of post %s", postId)
+		post, err := be.GetPost(postId)
+		assert.Nil(t, err, msg)
+		overrideUsername, ok := post.Props["override_username"]
+		assert.True(t, ok, msg)
+		assert.Equal(t, "Mr Haddock Sr", overrideUsername, msg)
+	}
+	// Check that a post first made using the first profile, then edited to use the default profile, is unaffected by the profile change
+	msg := fmt.Sprintf("Checking username of post %s", post5)
+	post, err := be.GetPost(post5)
+	assert.Nil(t, err, msg)
+	overrideUsername, ok := post.Props["override_username"]
+	assert.True(t, ok, msg)
+	assert.Equal(t, nil, overrideUsername, msg)
 }
 
 type tAtt struct {
@@ -216,7 +260,7 @@ func cmd(be main.Backend, command, userId, channelId, teamId, rootId string,
 	}
 }
 
-func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProfile, expectedDisplayName, expectedThumbURL string) {
+func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProfile, expectedDisplayName, expectedThumbURL string) string {
 	msg := fmt.Sprintf("CreatePost: %s", inputPost.Id)
 	post, errStr := main.ProfiledPost(be, inputPost, false)
 	assert.Equal(t, "", errStr, msg)
@@ -225,11 +269,37 @@ func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProf
 	}
 	_, postAlreadyExists := be.Posts[post.Id]
 	assert.False(t, postAlreadyExists, msg)
-	be.Posts[post.Id] = post
 	if expectedProfile == "" {
 		assert.Nil(t, post.Props["profile_identifier"], msg)
 		assert.Nil(t, post.Props["override_username"], msg)
 		assert.Nil(t, post.Props["override_icon_url"], msg)
+		assert.Nil(t, post.Props["from_webhook"], msg)
+	} else {
+		assert.Equal(t, expectedProfile, post.Props["profile_identifier"], msg)
+		assert.Equal(t, expectedDisplayName, post.Props["override_username"], msg)
+		assert.Equal(t, expectedThumbURL, post.Props["override_icon_url"], msg)
+		assert.Equal(t, "true", post.Props["from_webhook"], msg)
+	}
+	post.Id = be.NewId()
+	be.Posts[post.Id] = post
+	main.RegisterPost(be, post)
+	return post.Id
+}
+
+func editPost(be main.BackendMock, t *testing.T, postId string, newMessage string, expectedProfile, expectedDisplayName, expectedThumbURL string) {
+	msg := fmt.Sprintf("EditPost: %s", postId)
+	post, pErr := be.GetPost(postId)
+	assert.Nil(t, pErr, msg)
+	assert.NotNil(t, post, msg)
+	post = post.Clone()
+	post.Message = newMessage
+	post, ppErrStr := main.ProfiledPost(be, post, true)
+	assert.Equal(t, "", ppErrStr, msg)
+	if expectedProfile == "" {
+		assert.Nil(t, post.Props["profile_identifier"], msg)
+		assert.Nil(t, post.Props["override_username"], msg)
+		assert.Nil(t, post.Props["override_icon_url"], msg)
+		assert.Nil(t, post.Props["from_webhook"], msg)
 	} else {
 		assert.Equal(t, expectedProfile, post.Props["profile_identifier"], msg)
 		assert.Equal(t, expectedDisplayName, post.Props["override_username"], msg)
@@ -237,4 +307,5 @@ func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProf
 		assert.Equal(t, "true", post.Props["from_webhook"], msg)
 	}
 	be.Posts[post.Id] = post
+	main.RegisterPost(be, post)
 }

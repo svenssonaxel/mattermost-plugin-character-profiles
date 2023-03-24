@@ -78,7 +78,13 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 			if err != nil {
 				return "", nil, err
 			}
-			newProfile = *oldProfile
+			newProfile = Profile{
+				UserId:        userId,
+				Identifier:    profileId,
+				Name:          oldProfile.Name,
+				PictureFileId: oldProfile.PictureFileId,
+				Status:        PROFILE_CHARACTER,
+			}
 			successMessage = fmt.Sprintf("Character profile `%s` modified by", profileId)
 			if setName {
 				newProfile.Name = profileDisplayName
@@ -119,6 +125,13 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 			}
 		}
 		err = setProfile(be, userId, &newProfile)
+		if err != nil {
+			return "", nil, err
+		}
+		// Update all existing messages that uses this profile. This is done no
+		// matter if the profile existed or not, because it is possible to delete a
+		// profile without deleting all messages that use it.
+		err = updatePostsUsingProfile(be, userId, profileId)
 		if err != nil {
 			return "", nil, err
 		}
@@ -257,7 +270,7 @@ func attachmentFromProfile(be Backend, profile Profile) *model.SlackAttachment {
 		}
 	case PROFILE_CORRUPT:
 		return &model.SlackAttachment{
-			Text:     fmt.Sprintf("**%s** *(corrupt profile)*\n`%s`\nError: %s", profile.Name, profile.Identifier, profile.Error.Error()),
+			Text:     fmt.Sprintf("**%s** *(corrupt profile)*\n`%s`\nError: %s", profile.Name, profile.Identifier, errStr(profile.Error)),
 			ThumbURL: profileIconUrl(be, profile, false),
 			Color:    "#ff0000",
 		}

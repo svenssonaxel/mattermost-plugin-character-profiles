@@ -21,4 +21,4 @@ Sometimes, e.g. for NPCs, you want to use character profiles in a one-off fashio
 - `me: I apologize for Captain Haddock's language.`: Send a one-off message using your real Mattermost profile.
 
 ## Limitations
-Changes to character profiles are only applied to messages created or edited after the change. When you edit and save a message, it will use the same profile identifier as when originally sent (or when last edited). If you want to change it, you can prefix the message to use the single message functionality described above. Making changes to character profiles will not change how past messages appear, unless edited after the changes are made. Setting default character profile identifier will never affect message editing.
+When you edit and save a message, it will use the same profile identifier as when originally sent (or when last edited). If you want to change it, you can prefix the message to use the single message functionality described above. Setting default character profile identifier will never affect message editing.

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"fmt"
+	"math/rand"
+	"net/http"
+
 	"github.com/mattermost/mattermost-server/v5/model"
 )
 
@@ -13,6 +17,7 @@ type BackendMock struct {
 	}
 	Channels  map[string]*model.Channel
 	FileInfos map[string]*model.FileInfo
+	IdCounter *int
 	KVStore   map[string][]byte
 	Posts     map[string]*model.Post
 	SiteURL   string
@@ -78,8 +83,8 @@ func (b BackendMock) GetFileInfo(id string) (*model.FileInfo, *model.AppError) {
 }
 func (b BackendMock) GetPost(id string) (*model.Post, *model.AppError) {
 	post, ok := b.Posts[id]
-	if !ok {
-		return nil, model.NewAppError("BackendMock", "post_not_found", nil, "", 0)
+	if !ok || post.DeleteAt != 0 {
+		return nil, model.NewAppError("BackendMock", "Unable to get the post.", nil, "", http.StatusNotFound)
 	}
 	return post, nil
 }
@@ -137,4 +142,27 @@ func (b BackendMock) KVGet(key string) ([]byte, *model.AppError) {
 func (b BackendMock) KVSet(key string, value []byte) *model.AppError {
 	b.KVStore[key] = value
 	return nil
+}
+func (b BackendMock) NewId() string {
+	*b.IdCounter++
+	// Create a 26 character reproducible, pseudo-random string based on the
+	// counter.
+	r := rand.NewSource(int64(*b.IdCounter))
+	// Possible characters in zbase32 encoding, see
+	// https://philzimmermann.com/docs/human-oriented-base-32-encoding.txt
+	chars := "abcdefghijkmnopqrstuwxyz13456789"
+	ret := ""
+	for i := 0; i < 26; i++ {
+		// Technically, since MM ids are 128-bit numbers, not all characters are
+		// possible at the last position but we don't care.
+		ret += string(chars[r.Int63()%32])
+	}
+	return ret
+}
+func (b BackendMock) UpdatePost(post *model.Post) (*model.Post, *model.AppError) {
+	if _, ok := b.Posts[post.Id]; !ok {
+		return nil, appError(fmt.Sprintf("Post \"%s\" not found", post.Id), nil)
+	}
+	b.Posts[post.Id] = post
+	return post, nil
 }
