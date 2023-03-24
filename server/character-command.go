@@ -47,7 +47,11 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 		profileDisplayName := strings.TrimPrefix(matches[3], "=")
 		setName := matches[3] != ""
 		setPicture := matches[1] != ""
-		var newProfile Profile
+		newProfile := Profile{
+			UserId:     userId,
+			Identifier: profileId,
+			Status:     PROFILE_CHARACTER,
+		}
 		var newPictureFileId string
 		if setPicture {
 			if rootId == "" {
@@ -74,17 +78,13 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 		var successMessage string
 		if existed {
 			// Modify character profile
-			oldProfile, err := getProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_CORRUPT)
+			oldProfile, err := GetProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_CORRUPT)
 			if err != nil {
 				return "", nil, err
 			}
-			newProfile = Profile{
-				UserId:        userId,
-				Identifier:    profileId,
-				Name:          oldProfile.Name,
-				PictureFileId: oldProfile.PictureFileId,
-				Status:        PROFILE_CHARACTER,
-			}
+			newProfile.Name = oldProfile.Name
+			newProfile.PictureFileId = oldProfile.PictureFileId
+			newProfile.RequestKey = oldProfile.RequestKey
 			successMessage = fmt.Sprintf("Character profile `%s` modified by", profileId)
 			if setName {
 				newProfile.Name = profileDisplayName
@@ -104,6 +104,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 				if samePicture {
 					successMessage += " updating the profile picture (to the same as before)"
 				} else {
+					newProfile.RequestKey = be.NewId()
 					successMessage += fmt.Sprintf(" updating the profile picture")
 				}
 			}
@@ -112,17 +113,15 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 			if !setName {
 				return "", nil, appError(fmt.Sprintf("No character profile with identifyer `%s` exists. In order to create it, you must at least provide a display name. Try `/character help` for details.", profileId), nil)
 			}
-			newProfile = Profile{
-				UserId:     userId,
-				Identifier: profileId,
-				Name:       profileDisplayName,
-				Status:     PROFILE_CHARACTER,
-			}
+			newProfile.Name = profileDisplayName
 			successMessage = fmt.Sprintf("Character profile `%s` created with display name \"%s\"", newProfile.Identifier, newProfile.Name)
 			if setPicture {
 				newProfile.PictureFileId = newPictureFileId
 				successMessage += " and a profile picture"
 			}
+		}
+		if setPicture && newProfile.RequestKey == "" {
+			newProfile.RequestKey = be.NewId()
 		}
 		err = setProfile(be, userId, &newProfile)
 		if err != nil {
@@ -185,7 +184,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 			if err != nil {
 				return "", nil, err
 			}
-			realProfile, err := getProfile(be, userId, "", PROFILE_ME)
+			realProfile, err := GetProfile(be, userId, "", PROFILE_ME)
 			if err != nil {
 				return "", nil, err
 			}
@@ -227,7 +226,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 		// Get profiles for all default profile identifiers and sort them.
 		profiles := []Profile{}
 		for profileId := range profileIdToChannelMentions {
-			profile, err := getProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_ME|PROFILE_CORRUPT|PROFILE_NONEXISTENT)
+			profile, err := GetProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_ME|PROFILE_CORRUPT|PROFILE_NONEXISTENT)
 			if err != nil {
 				return "", nil, err
 			}
@@ -255,29 +254,30 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 }
 
 func attachmentFromProfile(be Backend, profile Profile) *model.SlackAttachment {
+	thumbUrl := profileIconUrl(be, profile, true)
 	switch profile.Status {
 	case PROFILE_CHARACTER:
 		return &model.SlackAttachment{
 			Text:     fmt.Sprintf("**%s**\n`%s`", profile.Name, profile.Identifier),
-			ThumbURL: profileIconUrl(be, profile, false),
+			ThumbURL: thumbUrl,
 			Color:    "#5c66ff",
 		}
 	case PROFILE_ME:
 		return &model.SlackAttachment{
 			Text:     fmt.Sprintf("**%s** *(your real profile)*\n`me`, `myself`", profile.Name),
-			ThumbURL: profileIconUrl(be, profile, false),
+			ThumbURL: thumbUrl,
 			Color:    "#009900",
 		}
 	case PROFILE_CORRUPT:
 		return &model.SlackAttachment{
 			Text:     fmt.Sprintf("**%s** *(corrupt profile)*\n`%s`\nError: %s", profile.Name, profile.Identifier, errStr(profile.Error)),
-			ThumbURL: profileIconUrl(be, profile, false),
+			ThumbURL: thumbUrl,
 			Color:    "#ff0000",
 		}
 	case PROFILE_NONEXISTENT:
 		return &model.SlackAttachment{
 			Text:     fmt.Sprintf("*(profile does not exist)*\n`%s`", profile.Identifier),
-			ThumbURL: profileIconUrl(be, profile, false),
+			ThumbURL: thumbUrl,
 			Color:    "#ff0000",
 		}
 	default:

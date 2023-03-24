@@ -25,10 +25,11 @@ type Profile struct {
 	Identifier      string          `json:"-"`           // not stored
 	Name            string          `json:"displayName"` // todo rename to DisplayName
 	PictureFileId   string          `json:"pictureFile"`
-	PictureFileInfo *model.FileInfo `json:"-"` // not stored
-	PicturePost     *model.Post     `json:"-"` // not stored
-	Status          int             `json:"-"` // not stored. Can be any of PROFILE_*.
-	Error           *model.AppError `json:"-"` // not stored. Must be set if Status == PROFILE_NONEXISTENT || Status == PROFILE_CORRUPTED.
+	PictureFileInfo *model.FileInfo `json:"-"`          // not stored
+	PicturePost     *model.Post     `json:"-"`          // not stored
+	Status          int             `json:"-"`          // not stored. Can be any of PROFILE_*.
+	Error           *model.AppError `json:"-"`          // not stored. Must be set if Status == PROFILE_NONEXISTENT || Status == PROFILE_CORRUPTED.
+	RequestKey      string          `json:"requestKey"` // Used to authorize HTTP requests for the profile picture, as well as force a cache miss.
 }
 
 func populateProfile(be Backend, profile *Profile) *model.AppError {
@@ -81,6 +82,9 @@ func (profile *Profile) validate(profileId string) *model.AppError {
 		if profile.PicturePost != nil {
 			return appError(pre+"PicturePost has a value despite no PictureFileId.", nil)
 		}
+		if profile.RequestKey != "" {
+			return appError(pre+"RequestKey has a value despite no PictureFileId.", nil)
+		}
 	} else {
 		file := profile.PictureFileInfo
 		if !file.IsImage() {
@@ -108,6 +112,9 @@ func (profile *Profile) validate(profileId string) *model.AppError {
 		}
 		if post.FileIds[0] != profile.PictureFileId {
 			return appError(pre+"The post supposedly holding the profile picture does not hold the expected file.", nil)
+		}
+		if profile.RequestKey == "" {
+			return appError(pre+"RequestKey is empty despite PictureFileId being set.", nil)
 		}
 	}
 	switch profile.Status {
@@ -157,7 +164,7 @@ func profileExists(be Backend, userId, profileId string) (bool, *model.AppError)
 	return StrsetHas(be, ProfileIdsKey(userId), profileId)
 }
 
-func getProfile(be Backend, userId, profileId string, accepted int) (*Profile, *model.AppError) {
+func GetProfile(be Backend, userId, profileId string, accepted int) (*Profile, *model.AppError) {
 	// Handle the real profile
 	if isMe(profileId) {
 		if accepted&PROFILE_ME != 0 {
@@ -279,13 +286,13 @@ func listProfiles(be Backend, userId string) ([]Profile, *model.AppError) {
 	}
 	ret := make([]Profile, 0)
 	for _, key := range keys {
-		profile, err := getProfile(be, userId, key, PROFILE_CHARACTER|PROFILE_CORRUPT)
+		profile, err := GetProfile(be, userId, key, PROFILE_CHARACTER|PROFILE_CORRUPT)
 		if err != nil {
 			return nil, err
 		}
 		ret = append(ret, *profile)
 	}
-	profile, err := getProfile(be, userId, "", PROFILE_ME)
+	profile, err := GetProfile(be, userId, "", PROFILE_ME)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +331,7 @@ func getDefaultProfileIdentifier(be Backend, userId, channelId string) (string, 
 }
 
 func setDefaultProfileIdentifier(be Backend, userId, channelId, profileId string) (*Profile, *model.AppError) {
-	profile, err := getProfile(be, userId, profileId, PROFILE_CHARACTER)
+	profile, err := GetProfile(be, userId, profileId, PROFILE_CHARACTER)
 	if err != nil {
 		return nil, err
 	}
@@ -337,26 +344,29 @@ func setDefaultProfileIdentifier(be Backend, userId, channelId, profileId string
 
 func profileIconUrl(be Backend, profile Profile, thumbnail bool) string {
 	siteURL := be.GetSiteURL()
+	pluginURL := siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles"
 	if profile.Status == PROFILE_CHARACTER {
 		fileId := profile.PictureFileId
+		userId := profile.UserId
+		profileId := profile.Identifier
 		if fileId == "" {
 			if thumbnail {
-				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character-thumbnail.jpeg"
+				return fmt.Sprintf("%s/static/character-thumbnail.jpeg", pluginURL)
 			}
-			return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character.png"
+			return fmt.Sprintf("%s/static/character.jpeg", pluginURL)
 		}
 		if thumbnail {
-			return siteURL + "/api/v4/files/" + fileId + "/thumbnail"
+			return fmt.Sprintf("%s/profile/%s/%s/thumbnail?rk=%s", pluginURL, userId, profileId, profile.RequestKey)
 		}
-		return siteURL + "/api/v4/files/" + fileId
+		return fmt.Sprintf("%s/profile/%s/%s?rk=%s", pluginURL, userId, profileId, profile.RequestKey)
 	}
 	if profile.Status == PROFILE_ME {
-		return siteURL + "/api/v4/users/" + profile.UserId + "/image" // todo how to get thumbnail?
+		return fmt.Sprintf("%s/api/v4/users/%s/image", siteURL, profile.UserId) // todo how to get thumbnail?
 	}
 	if thumbnail {
-		return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign-thumbnail.jpg"
+		return fmt.Sprintf("%s/static/no-sign-thumbnail.jpg", pluginURL)
 	}
-	return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign.jpg"
+	return fmt.Sprintf("%s/static/no-sign.jpg", pluginURL)
 }
 
 func ProfileIdsKey(userId string) string {

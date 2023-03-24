@@ -25,6 +25,9 @@ type BackendMock struct {
 	Users     map[string]*model.User
 }
 
+func (b BackendMock) GetBundlePath() string {
+	return "/mock-bundle-path"
+}
 func (b BackendMock) GetChannelMembers(channelId string, page int, perPage int) (*model.ChannelMembers, *model.AppError) {
 	ret := make(model.ChannelMembers, 0)
 	for _, member := range b.ChannelMembers {
@@ -158,6 +161,9 @@ func (b BackendMock) NewId() string {
 		ret += string(chars[r.Int63()%32])
 	}
 	return ret
+}
+func (b BackendMock) ReadFile(path string) ([]byte, *model.AppError) {
+	return []byte{}, nil
 }
 func (b BackendMock) UpdatePost(post *model.Post) (*model.Post, *model.AppError) {
 	if _, ok := b.Posts[post.Id]; !ok {

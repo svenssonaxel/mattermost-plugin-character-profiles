@@ -2,9 +2,9 @@ package main
 
 import (
 	"net/http"
-	"path/filepath"
 	"sync"
 
+	"github.com/gorilla/mux"
 	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/mattermost/mattermost-server/v5/plugin"
 )
@@ -20,8 +20,10 @@ type Plugin struct {
 	// setConfiguration for usage.
 	configuration *configuration
 
+	router *mux.Router
+
 	// Mockable backend, the only thing passed to non-glue code.
-	backend *Backend
+	backend Backend
 }
 
 func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
@@ -33,7 +35,7 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 	channelId := args.ChannelId
 	teamId := args.TeamId
 
-	responseMessage, attachments, err := DoExecuteCommand(*p.backend, args.Command, userId, channelId, teamId, args.RootId)
+	responseMessage, attachments, err := DoExecuteCommand(p.backend, args.Command, userId, channelId, teamId, args.RootId)
 
 	if err != nil {
 		return nil, err
@@ -62,6 +64,11 @@ func getRealBackendFromPlugin(p *Plugin) (Backend, *model.AppError) {
 		return backend, model.NewAppError("backendFromPlugin", "Cannot get Site URL", nil, "", http.StatusInternalServerError)
 	}
 	backend.SiteURL = *maybeSiteURL
+	bundlePath, bpErr := p.API.GetBundlePath()
+	if bpErr != nil {
+		return backend, model.NewAppError("backendFromPlugin", "Cannot get bundle path", nil, "", http.StatusInternalServerError)
+	}
+	backend.BundlePath = bundlePath
 	if p.API == nil {
 		return backend, model.NewAppError("backendFromPlugin", "Cannot get API", nil, "", http.StatusInternalServerError)
 	}
@@ -74,7 +81,7 @@ func (p *Plugin) OnActivate() error {
 	if beErr != nil {
 		return beErr
 	}
-	p.backend = &backend
+	p.backend = backend
 	err := p.API.RegisterCommand(&model.Command{
 		Trigger:          "character",
 		Description:      "Become a nomad of names, a litany of labels, to master monikers and fabricate fables.",
@@ -86,6 +93,7 @@ func (p *Plugin) OnActivate() error {
 	if err != nil {
 		return err
 	}
+	p.router = routerFromBackend(p.backend)
 	return nil
 }
 
@@ -93,37 +101,35 @@ func (p *Plugin) MessageWillBePosted(_ *plugin.Context, post *model.Post) (*mode
 	if p.backend == nil {
 		return nil, "Backend not initialized"
 	}
-	return ProfiledPost(*p.backend, post, false)
+	return ProfiledPost(p.backend, post, false)
 }
 
 func (p *Plugin) MessageWillBeUpdated(_ *plugin.Context, newPost *model.Post, _ *model.Post) (*model.Post, string) {
 	if p.backend == nil {
 		return nil, "Backend not initialized"
 	}
-	return ProfiledPost(*p.backend, newPost, true)
+	return ProfiledPost(p.backend, newPost, true)
 }
 
 func (p *Plugin) MessageHasBeenPosted(_ *plugin.Context, post *model.Post) {
-	err := RegisterPost(*p.backend, post)
+	err := RegisterPost(p.backend, post)
 	if err != nil {
 		p.API.LogError("Failed to register post", "error", err.Error())
 	}
 }
 
 func (p *Plugin) MessageHasBeenUpdated(_ *plugin.Context, newPost *model.Post, _ *model.Post) {
-	err := RegisterPost(*p.backend, newPost)
+	err := RegisterPost(p.backend, newPost)
 	if err != nil {
 		p.API.LogError("Failed to register post", "error", err.Error())
 	}
 }
 
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
-	bundlePath, err := p.API.GetBundlePath()
-	if err != nil {
-		p.API.LogWarn("Failed to get bundle path", "error", err.Error())
-		w.WriteHeader(http.StatusInternalServerError)
+	be := p.backend
+	if be == nil {
+		http.Error(w, "Backend not initialized", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	http.ServeFile(w, r, filepath.Join(bundlePath, "assets", r.URL.Path))
+	p.router.ServeHTTP(w, r)
 }

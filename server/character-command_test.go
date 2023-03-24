@@ -14,21 +14,16 @@ import (
 
 func TestScenario1(t *testing.T) {
 	var (
-		siteURL      = "http://mocksite.tld"
-		channel1     = "channel1_________________"
-		channel2     = "channel2_________________"
-		characterPng = siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/character.png"
-		file1        = "file1_____________________"
-		file1Png     = siteURL + "/api/v4/files/" + file1
-		file2        = "file2_____________________"
-		file2Png     = siteURL + "/api/v4/files/" + file2
-		nosign       = siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/no-sign.jpg"
-		post1        = "post1_____________________"
-		post2        = "post2_____________________"
-		team1        = "team1_____________________"
-		user1        = "user1_____________________"
-		user1image   = siteURL + "/api/v4/users/" + user1 + "/image"
-		user2        = "user2_____________________"
+		siteURL  = "http://mocksite.tld"
+		channel1 = "channel1_________________"
+		channel2 = "channel2_________________"
+		file1    = "file1_____________________"
+		file2    = "file2_____________________"
+		post1    = "post1_____________________"
+		post2    = "post2_____________________"
+		team1    = "team1_____________________"
+		user1    = "user1_____________________"
+		user2    = "user2_____________________"
 	)
 	// Initialize the backend mock
 	be := main.BackendMock{
@@ -63,6 +58,42 @@ func TestScenario1(t *testing.T) {
 			user2: {Id: user2, Username: "user-number-two"},
 		},
 	}
+	var (
+		characterImg = func(thumb bool) string {
+			if thumb {
+				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/character-thumbnail.jpeg"
+			} else {
+				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/character.png"
+			}
+		}
+		nosign = func(thumb bool) string {
+			if thumb {
+				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/no-sign-thumbnail.jpg"
+			} else {
+				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/no-sign.jpg"
+			}
+		}
+		user1image     = func(_ bool) string { return siteURL + "/api/v4/users/" + user1 + "/image" }
+		characterImage = func(be main.Backend, userId string, profileIdentifier string) func(thumb bool) string {
+			return func(thumb bool) string {
+				profile, err := main.GetProfile(be, userId, profileIdentifier, main.PROFILE_CHARACTER)
+				if err != nil {
+					return "ERROR: " + err.Error()
+				}
+				if profile == nil {
+					return "ERROR: profile not found"
+				}
+				rk := profile.RequestKey
+				t := ""
+				if thumb {
+					t = "/thumbnail"
+				}
+				return fmt.Sprintf("%s/plugins/com.axelsvensson.mattermost-plugin-character-profiles/profile/%s/%s%s?rk=%s", be.GetSiteURL(), userId, profileIdentifier, t, rk)
+			}
+		}
+		user1haddockImg = characterImage(be, user1, "haddock")
+		user1milouImg   = characterImage(be, user1, "milou")
+	)
 	red := "#ff0000"
 	green := "#009900"
 	blue := "#5c66ff"
@@ -76,7 +107,7 @@ func TestScenario1(t *testing.T) {
 	cmd(be, "/character someone=Someone", user1, channel1, team1, "", t,
 		"Character profile `someone` created with display name \"Someone\"",
 		[]tAtt{{"**Someone**\n`someone`",
-			blue, characterPng},
+			blue, characterImg},
 		})
 	cmd(be, "/character delete someone", user1, channel1, team1, "", t,
 		"Deleted character profile `someone`.",
@@ -85,27 +116,27 @@ func TestScenario1(t *testing.T) {
 	cmd(be, "/character haddock=Captain Haddock", user1, channel1, team1, "", t,
 		"Character profile `haddock` created with display name \"Captain Haddock\"",
 		[]tAtt{{"**Captain Haddock**\n`haddock`",
-			blue, characterPng},
+			blue, characterImg},
 		})
 	cmd(be, "/character picture haddock", user1, channel1, team1, post1, t,
 		"Character profile `haddock` modified by updating the profile picture",
 		[]tAtt{{"**Captain Haddock**\n`haddock`",
-			blue, file1Png},
+			blue, user1haddockImg},
 		})
 	// Create a new profile and set its profile picture in the same command
 	cmd(be, "/character picture milou=Milou", user1, channel1, team1, post2, t,
 		"Character profile `milou` created with display name \"Milou\" and a profile picture",
 		[]tAtt{{"**Milou**\n`milou`",
-			blue, file2Png},
+			blue, user1milouImg},
 		})
 	// List the profiles
 	cmd(be, "/character list", user1, channel1, team1, "", t,
 		"## Character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`",
-				blue, file1Png},
+				blue, user1haddockImg},
 			{"**Milou**\n`milou`",
-				blue, file2Png},
+				blue, user1milouImg},
 			{"**user-number-one** *(your real profile)*\n`me`, `myself`",
 				green, user1image},
 		})
@@ -113,18 +144,18 @@ func TestScenario1(t *testing.T) {
 	cmd(be, "/character I am haddock", user1, channel1, team1, "", t,
 		"You are now known as \"Captain Haddock\".",
 		[]tAtt{{"**Captain Haddock**\n`haddock`",
-			blue, file1Png},
+			blue, user1haddockImg},
 		})
 	cmd(be, "/character I am milou", user1, channel2, team1, "", t,
 		"You are now known as \"Milou\".",
 		[]tAtt{{"**Milou**\n`milou`",
-			blue, file2Png},
+			blue, user1milouImg},
 		})
 	// Change the profile picture of the first profile
 	cmd(be, "/character picture haddock", user1, channel1, team1, post2, t,
 		"Character profile `haddock` modified by updating the profile picture",
 		[]tAtt{{"**Captain Haddock**\n`haddock`",
-			blue, file2Png},
+			blue, user1haddockImg},
 		})
 	// Delete the post holding the profile picture of the second profile
 	be.Posts[post2].DeleteAt = 1
@@ -132,14 +163,14 @@ func TestScenario1(t *testing.T) {
 	cmd(be, "/character picture haddock", user1, channel1, team1, post1, t,
 		"Character profile `haddock` modified by updating the profile picture",
 		[]tAtt{{"**Captain Haddock**\n`haddock`",
-			blue, file1Png},
+			blue, user1haddockImg},
 		})
 	// List profiles for user1
 	cmd(be, "/character list", user1, channel1, team1, "", t,
 		"## Character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`",
-				blue, file1Png},
+				blue, user1haddockImg},
 			{"**Milou** *(corrupt profile)*\n`milou`\nError: Character Profile Plugin: Profile `milou` is corrupt and needs to be recreated: Failed to populate profile `milou`: The post supposedly holding the profile picture could not be found, perhaps it's deleted.",
 				red, nosign},
 			{"**user-number-one** *(your real profile)*\n`me`, `myself`",
@@ -147,22 +178,22 @@ func TestScenario1(t *testing.T) {
 		})
 	// Add a post by user1 to channel1 and check that the first profile is used
 	post3 := post(be, t, &model.Post{UserId: user1, ChannelId: channel1, Message: "Hello from Haddock"},
-		"haddock", "Captain Haddock", file1Png)
+		"haddock", "Captain Haddock", user1haddockImg)
 	// Add a post by user1 to channel2 and check that the default profile is used (because the second profile is corrupt)
 	post(be, t, &model.Post{UserId: user1, ChannelId: channel2, Message: "No hello from Milou"},
-		"", "", "")
+		"", "", nil)
 	// Add a one-off post by user1 to channel2 and check that the first profile is used
 	post5 := post(be, t, &model.Post{UserId: user1, ChannelId: channel2, Message: "haddock: Hello from Haddock"},
-		"haddock", "Captain Haddock", file1Png)
+		"haddock", "Captain Haddock", user1haddockImg)
 	// Add a one-off post by user1 to channel1 and check that the default profile is used
 	post6 := post(be, t, &model.Post{UserId: user1, ChannelId: channel1, Message: "me: Hello from user-number-one"},
-		"", "", "")
+		"", "", nil)
 	// List default profiles for user1
 	cmd(be, "/character who am I", user1, channel1, team1, "", t,
 		"## Default character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`\nDefault profile in: ~channel-one",
-				blue, file1Png},
+				blue, user1haddockImg},
 			{"**Milou** *(corrupt profile)*\n`milou`\nError: Character Profile Plugin: Profile `milou` is corrupt and needs to be recreated: Failed to populate profile `milou`: The post supposedly holding the profile picture could not be found, perhaps it's deleted.\nDefault profile in: ~channel-two",
 				red, nosign},
 		})
@@ -175,7 +206,7 @@ func TestScenario1(t *testing.T) {
 		"## Default character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`\nDefault profile in: ~channel-one",
-				blue, file1Png},
+				blue, user1haddockImg},
 			{"*(profile does not exist)*\n`milou`\nDefault profile in: ~channel-two",
 				red, nosign},
 		})
@@ -184,7 +215,7 @@ func TestScenario1(t *testing.T) {
 		"## Character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`",
-				blue, file1Png},
+				blue, user1haddockImg},
 			{"**user-number-one** *(your real profile)*\n`me`, `myself`",
 				green, user1image},
 		})
@@ -199,26 +230,26 @@ func TestScenario1(t *testing.T) {
 		"## Default character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`\nDefault profile in: ~channel-one",
-				blue, file1Png},
+				blue, user1haddockImg},
 			{"**user-number-one** *(your real profile)*\n`me`, `myself`\nDefault profile in: ~channel-two",
 				green, user1image},
 		})
 	// Edit a post made by user1 using the first profile, to instead use the default profile
-	editPost(be, t, post5, "me: Actually, hello from me instead", "", "", "")
+	editPost(be, t, post5, "me: Actually, hello from me instead", "", "", nil)
 	// Edit a post made by user1 using the default profile, to instead use the first profile
-	editPost(be, t, post6, "haddock: Hello from Haddock, again", "haddock", "Captain Haddock", file1Png)
+	editPost(be, t, post6, "haddock: Hello from Haddock, again", "haddock", "Captain Haddock", user1haddockImg)
 	// Change the display name of the first profile
 	cmd(be, "/character haddock=Mr Haddock Sr", user1, channel1, team1, "", t,
 		"Character profile `haddock` modified by changing the display name from \"Captain Haddock\" to \"Mr Haddock Sr\"",
 		[]tAtt{{"**Mr Haddock Sr**\n`haddock`",
-			blue, file1Png},
+			blue, user1haddockImg},
 		})
 	// List profiles for user1
 	cmd(be, "/character list", user1, channel1, team1, "", t,
 		"## Character profiles",
 		[]tAtt{
 			{"**Mr Haddock Sr**\n`haddock`",
-				blue, file1Png},
+				blue, user1haddockImg},
 			{"**user-number-one** *(your real profile)*\n`me`, `myself`",
 				green, user1image},
 		})
@@ -241,9 +272,9 @@ func TestScenario1(t *testing.T) {
 }
 
 type tAtt struct {
-	Text     string
-	Color    string
-	ThumbURL string
+	Text      string
+	Color     string
+	GetImgURL func(thumb bool) string
 }
 
 func cmd(be main.Backend, command, userId, channelId, teamId, rootId string,
@@ -256,11 +287,11 @@ func cmd(be main.Backend, command, userId, channelId, teamId, rootId string,
 	for i, expectedAttachment := range expectedAttachments {
 		assert.Equal(t, expectedAttachment.Text, attachments[i].Text, msg)
 		assert.Equal(t, expectedAttachment.Color, attachments[i].Color, msg)
-		assert.Equal(t, expectedAttachment.ThumbURL, attachments[i].ThumbURL, msg)
+		assert.Equal(t, expectedAttachment.GetImgURL(true), attachments[i].ThumbURL, msg)
 	}
 }
 
-func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProfile, expectedDisplayName, expectedThumbURL string) string {
+func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProfile, expectedDisplayName string, getExpectedImgURL func(thumb bool) string) string {
 	msg := fmt.Sprintf("CreatePost: %s", inputPost.Id)
 	post, errStr := main.ProfiledPost(be, inputPost, false)
 	assert.Equal(t, "", errStr, msg)
@@ -277,7 +308,7 @@ func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProf
 	} else {
 		assert.Equal(t, expectedProfile, post.Props["profile_identifier"], msg)
 		assert.Equal(t, expectedDisplayName, post.Props["override_username"], msg)
-		assert.Equal(t, expectedThumbURL, post.Props["override_icon_url"], msg)
+		assert.Equal(t, getExpectedImgURL(false), post.Props["override_icon_url"], msg)
 		assert.Equal(t, "true", post.Props["from_webhook"], msg)
 	}
 	post.Id = be.NewId()
@@ -286,12 +317,12 @@ func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProf
 	return post.Id
 }
 
-func editPost(be main.BackendMock, t *testing.T, postId string, newMessage string, expectedProfile, expectedDisplayName, expectedThumbURL string) {
+func editPost(be main.BackendMock, t *testing.T, postId string, newMessage string, expectedProfile, expectedDisplayName string, getExpectedImgURL func(thumb bool) string) {
 	msg := fmt.Sprintf("EditPost: %s", postId)
 	post, pErr := be.GetPost(postId)
 	assert.Nil(t, pErr, msg)
 	assert.NotNil(t, post, msg)
-	post = post.Clone()
+	post = main.DeepClonePost(post)
 	post.Message = newMessage
 	post, ppErrStr := main.ProfiledPost(be, post, true)
 	assert.Equal(t, "", ppErrStr, msg)
@@ -303,7 +334,7 @@ func editPost(be main.BackendMock, t *testing.T, postId string, newMessage strin
 	} else {
 		assert.Equal(t, expectedProfile, post.Props["profile_identifier"], msg)
 		assert.Equal(t, expectedDisplayName, post.Props["override_username"], msg)
-		assert.Equal(t, expectedThumbURL, post.Props["override_icon_url"], msg)
+		assert.Equal(t, getExpectedImgURL(false), post.Props["override_icon_url"], msg)
 		assert.Equal(t, "true", post.Props["from_webhook"], msg)
 	}
 	be.Posts[post.Id] = post

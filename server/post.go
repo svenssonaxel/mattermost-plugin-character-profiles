@@ -45,7 +45,7 @@ func ProfiledPost(be Backend, post *model.Post, isedited bool) (*model.Post, str
 		return nil, ""
 	}
 	// Clone before altering
-	ret := post.Clone()
+	ret := DeepClonePost(post)
 
 	// Handle one-off profiled posts
 	matches := regexp.MustCompile(`(?s)^([a-z]+):[ \n](.*)$`).FindStringSubmatch(post.Message)
@@ -53,7 +53,7 @@ func ProfiledPost(be Backend, post *model.Post, isedited bool) (*model.Post, str
 		// This might be a one-off post.
 		profileId := matches[1]
 		actualMessage := matches[2]
-		profile, err := getProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_ME)
+		profile, err := GetProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_ME)
 		if err == nil && profile != nil {
 			// We found a matching profile, so this is an actual one-off post.
 			ret.Message = actualMessage
@@ -66,7 +66,7 @@ func ProfiledPost(be Backend, post *model.Post, isedited bool) (*model.Post, str
 	if opiOk {
 		oldProfileIdentifierStr, ok := oldProfileIdentifier.(string)
 		if ok {
-			profile, err := getProfile(be, userId, oldProfileIdentifierStr, PROFILE_CHARACTER)
+			profile, err := GetProfile(be, userId, oldProfileIdentifierStr, PROFILE_CHARACTER)
 			if err == nil && profile != nil {
 				// We found a matching profile, so let's update the post with the current settings.
 				return profilePost(be, ret, *profile)
@@ -82,7 +82,7 @@ func ProfiledPost(be Backend, post *model.Post, isedited bool) (*model.Post, str
 	channelId := post.ChannelId
 	profileId, err := getDefaultProfileIdentifier(be, userId, channelId)
 	if err == nil {
-		profile, err := getProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_ME)
+		profile, err := GetProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_ME)
 		if err == nil && profile != nil {
 			// We found a matching profile, so let's apply it to the post.
 			return profilePost(be, ret, *profile)
@@ -122,7 +122,7 @@ func getIdsetKey(userId, profileId string) string {
 
 func updatePostsUsingProfile(be Backend, userId, profileId string) *model.AppError {
 	pre := fmt.Sprintf("updatePostsUsingProfile(%s, %s): ", userId, profileId)
-	profile, err := getProfile(be, userId, profileId, PROFILE_CHARACTER)
+	profile, err := GetProfile(be, userId, profileId, PROFILE_CHARACTER)
 	if err != nil {
 		return appErrorPre(pre, err)
 	}
@@ -156,9 +156,16 @@ func updatePostsUsingProfile(be Backend, userId, profileId string) *model.AppErr
 			// happen if the post was edited to use a different profile.
 			return nil
 		}
-		profiledPost, errStr := profilePost(be, post, *profile)
+		profiledPost, errStr := profilePost(be, DeepClonePost(post), *profile)
 		if errStr != "" {
 			return appError(errStr, nil)
+		}
+		// If post is unchanged, don't update it.
+		if profiledPost.Message == post.Message &&
+			profiledPost.Props["override_username"] == post.Props["override_username"] &&
+			profiledPost.Props["override_icon_url"] == post.Props["override_icon_url"] &&
+			profiledPost.Props["from_webhook"] == post.Props["from_webhook"] {
+			return nil
 		}
 		_, err = be.UpdatePost(profiledPost)
 		if err != nil {
@@ -184,4 +191,15 @@ func GetPostIfExists(be Backend, postId string) (*model.Post, *model.AppError) {
 		return nil, appErrorPre("GetPostIfExists: ", err)
 	}
 	return post, nil
+}
+
+// DeepClonePost returns a clone of the given post that is safe to modify. This
+// is under the assumption that only Props and shallow fields are modified.
+func DeepClonePost(post *model.Post) *model.Post {
+	ret := post.Clone()
+	ret.Props = make(map[string]interface{})
+	for k, v := range post.Props {
+		ret.Props[k] = v
+	}
+	return ret
 }
