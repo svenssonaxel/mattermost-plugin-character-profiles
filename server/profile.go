@@ -342,9 +342,13 @@ func setDefaultProfileIdentifier(be Backend, userId, channelId, profileId string
 	return profile, nil
 }
 
+func GetPluginURL(be Backend) string {
+	return be.GetSiteURL() + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles"
+}
+
 func profileIconUrl(be Backend, profile Profile, thumbnail bool) string {
 	siteURL := be.GetSiteURL()
-	pluginURL := siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles"
+	pluginURL := GetPluginURL(be)
 	if profile.Status == PROFILE_CHARACTER {
 		fileId := profile.PictureFileId
 		userId := profile.UserId

@@ -58,19 +58,20 @@ func TestScenario1(t *testing.T) {
 			user2: {Id: user2, Username: "user-number-two"},
 		},
 	}
+	pluginURL := main.GetPluginURL(be)
 	var (
 		characterImg = func(thumb bool) string {
 			if thumb {
-				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/defaultprofilepicture/thumbnail"
+				return pluginURL + "/static/defaultprofilepicture/thumbnail"
 			} else {
-				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/defaultprofilepicture"
+				return pluginURL + "/static/defaultprofilepicture"
 			}
 		}
 		nosign = func(thumb bool) string {
 			if thumb {
-				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/corruptedprofilepicture/thumbnail"
+				return pluginURL + "/static/corruptedprofilepicture/thumbnail"
 			} else {
-				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/corruptedprofilepicture"
+				return pluginURL + "/static/corruptedprofilepicture"
 			}
 		}
 		user1image     = func(_ bool) string { return siteURL + "/api/v4/users/" + user1 + "/image" }

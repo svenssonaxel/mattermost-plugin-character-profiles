@@ -40,6 +40,8 @@ func checkAuthenticity(next http.Handler) http.Handler {
 
 // Map of paths to files in the static directory
 var staticFiles = map[string]string{
+	"botprofilepicture":                 "pluginicon.png",
+	"botprofilepicture/thumbnail":       "pluginicon-thumbnail.jpeg",
 	"defaultprofilepicture":             "character.png",
 	"defaultprofilepicture/thumbnail":   "character-thumbnail.jpeg",
 	"corruptedprofilepicture":           "no-sign.jpg",

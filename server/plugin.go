@@ -42,15 +42,13 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 	}
 
 	if responseMessage != "" {
+		iconURL := GetPluginURL(p.backend) + "/static/botprofilepicture"
 		return &model.CommandResponse{
-			Username: "Character Profiles",
-			// todo IconURL:
+			Username:     "Character Profiles",
+			IconURL:      iconURL,
 			ResponseType: model.COMMAND_RESPONSE_TYPE_EPHEMERAL,
 			Text:         responseMessage,
-			Props: map[string]interface{}{
-				"from_webhook": "true",
-			},
-			Attachments: attachments,
+			Attachments:  attachments,
 		}, nil
 	}
 
