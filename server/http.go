@@ -15,8 +15,9 @@ func routerFromBackend(be Backend) *mux.Router {
 	router := mux.NewRouter()
 	router.Use(checkAuthenticity)
 	// Serve static files from /static
-	bundlePath := be.GetBundlePath()
-	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(bundlePath, "assets")))))
+	router.HandleFunc("/static/{path:.*}", func(w http.ResponseWriter, r *http.Request) {
+		serveStaticFile(be, w, r, mux.Vars(r)["path"])
+	})
 	// Serve profile images from /profile
 	router.HandleFunc("/profile/{userId:[a-z0-9]{26}}/{profileId:[a-z]+}", func(w http.ResponseWriter, r *http.Request) {
 		serveProfileImage(be, w, r, mux.Vars(r)["userId"], mux.Vars(r)["profileId"], r.URL.Query().Get("rk"), false)
@@ -35,6 +36,23 @@ func checkAuthenticity(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// Map of paths to files in the static directory
+var staticFiles = map[string]string{
+	"defaultprofilepicture":             "character.png",
+	"defaultprofilepicture/thumbnail":   "character-thumbnail.jpeg",
+	"corruptedprofilepicture":           "no-sign.jpg",
+	"corruptedprofilepicture/thumbnail": "no-sign-thumbnail.jpg",
+}
+
+func serveStaticFile(be Backend, w http.ResponseWriter, r *http.Request, path string) {
+	filename, ok := staticFiles[path]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, filepath.Join(be.GetBundlePath(), "assets", filename))
 }
 
 func serveProfileImage(be Backend, w http.ResponseWriter, r *http.Request, userId string, profileId string, requestKey string, thumbnail bool) {

@@ -61,16 +61,16 @@ func TestScenario1(t *testing.T) {
 	var (
 		characterImg = func(thumb bool) string {
 			if thumb {
-				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/character-thumbnail.jpeg"
+				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/defaultprofilepicture/thumbnail"
 			} else {
-				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/character.png"
+				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/defaultprofilepicture"
 			}
 		}
 		nosign = func(thumb bool) string {
 			if thumb {
-				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/no-sign-thumbnail.jpg"
+				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/corruptedprofilepicture/thumbnail"
 			} else {
-				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/no-sign.jpg"
+				return siteURL + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles/static/corruptedprofilepicture"
 			}
 		}
 		user1image     = func(_ bool) string { return siteURL + "/api/v4/users/" + user1 + "/image" }

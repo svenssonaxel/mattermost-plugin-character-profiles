@@ -351,9 +351,9 @@ func profileIconUrl(be Backend, profile Profile, thumbnail bool) string {
 		profileId := profile.Identifier
 		if fileId == "" {
 			if thumbnail {
-				return fmt.Sprintf("%s/static/character-thumbnail.jpeg", pluginURL)
+				return fmt.Sprintf("%s/static/defaultprofilepicture/thumbnail", pluginURL)
 			}
-			return fmt.Sprintf("%s/static/character.jpeg", pluginURL)
+			return fmt.Sprintf("%s/static/defaultprofilepicture", pluginURL)
 		}
 		if thumbnail {
 			return fmt.Sprintf("%s/profile/%s/%s/thumbnail?rk=%s", pluginURL, userId, profileId, profile.RequestKey)
@@ -364,9 +364,9 @@ func profileIconUrl(be Backend, profile Profile, thumbnail bool) string {
 		return fmt.Sprintf("%s/api/v4/users/%s/image", siteURL, profile.UserId) // todo how to get thumbnail?
 	}
 	if thumbnail {
-		return fmt.Sprintf("%s/static/no-sign-thumbnail.jpg", pluginURL)
+		return fmt.Sprintf("%s/static/corruptedprofilepicture/thumbnail", pluginURL)
 	}
-	return fmt.Sprintf("%s/static/no-sign.jpg", pluginURL)
+	return fmt.Sprintf("%s/static/corruptedprofilepicture", pluginURL)
 }
 
 func ProfileIdsKey(userId string) string {
