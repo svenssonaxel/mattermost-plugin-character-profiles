@@ -165,6 +165,9 @@ func (b BackendMock) NewId() string {
 func (b BackendMock) ReadFile(path string) ([]byte, *model.AppError) {
 	return []byte{}, nil
 }
+func (b BackendMock) UpdateEphemeralPost(userId string, post *model.Post) *model.Post {
+	return post
+}
 func (b BackendMock) UpdatePost(post *model.Post) (*model.Post, *model.AppError) {
 	if _, ok := b.Posts[post.Id]; !ok {
 		return nil, appError(fmt.Sprintf("Post \"%s\" not found", post.Id), nil)

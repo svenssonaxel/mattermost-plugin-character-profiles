@@ -13,11 +13,11 @@ import (
 //go:embed helptext.md
 var helpText string
 
-func isMe(id string) bool {
+func IsMe(id string) bool {
 	return id == "" || id == "myself" || id == "me"
 }
 
-func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId string) (string, []*model.SlackAttachment, *model.AppError) {
+func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId string, confirmed bool) (string, []*model.SlackAttachment, *model.AppError) {
 
 	// Make sure command begins correctly with `/character `
 	matches := regexp.MustCompile(`^/character (.*)$`).FindStringSubmatch(command)
@@ -37,7 +37,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 	matches = regexp.MustCompile(`^(picture )?([a-z]+)(=.*)?$`).FindStringSubmatch(query)
 	if len(matches) == 4 && (matches[1] != "" || matches[3] != "") {
 		profileId := matches[2]
-		if isMe(profileId) {
+		if IsMe(profileId) {
 			return "", nil, appError("You cannot use `myself` or `me` as a character profile identifyer. Use the Mattermost built-in functionality to change the display name or profile picture for your real Mattermost profile.", nil)
 		}
 		existed, err := profileExists(be, userId, profileId)
@@ -130,7 +130,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 		// Update all existing messages that uses this profile. This is done no
 		// matter if the profile existed or not, because it is possible to delete a
 		// profile without deleting all messages that use it.
-		err = updatePostsUsingProfile(be, userId, profileId)
+		err = updatePostsForProfile(be, userId, profileId, profileId)
 		if err != nil {
 			return "", nil, err
 		}
@@ -141,7 +141,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 	matches = regexp.MustCompile(`^delete ([a-z]+)$`).FindStringSubmatch(query)
 	if len(matches) == 2 {
 		profileId := matches[1]
-		if isMe(profileId) {
+		if IsMe(profileId) {
 			return "", nil, appError("Please do not try to delete yourself. If you have suicidal thoughts, call 90101 (Sweden) or +1-800-273-8255 (International).", nil)
 		}
 		exists, err := profileExists(be, userId, profileId)
@@ -167,6 +167,125 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 		return "## Character profiles", attachmentsFromProfiles(be, profiles), nil
 	}
 
+	// `/character make haddock into milou`: Unless character profile `milou` already exists, create it with the same display name and profile picture as character profile `haddock`. Then, modify all existing messages that use character profile `haddock` to instead use character profile `milou`, and delete character profile `haddock`.
+	matches = regexp.MustCompile(`^make ([a-z]+) into ([a-z]+)$`).FindStringSubmatch(query)
+	if len(matches) == 3 {
+		oldProfileId := matches[1]
+		targetProfileId := matches[2]
+		oldProfile, err := GetProfile(be, userId, oldProfileId, PROFILE_CHARACTER|PROFILE_ME|PROFILE_CORRUPT|PROFILE_NONEXISTENT)
+		if oldProfile == nil && err != nil {
+			return "", nil, err
+		}
+		targetProfile, err := GetProfile(be, userId, targetProfileId, PROFILE_CHARACTER|PROFILE_ME|PROFILE_CORRUPT|PROFILE_NONEXISTENT)
+		if targetProfile == nil && err != nil {
+			return "", nil, err
+		}
+		var oldCount, targetCount int
+		if !IsMe(oldProfileId) {
+			oldCount, err = countPostsForProfile(be, userId, oldProfileId)
+			if err != nil {
+				return "", nil, err
+			}
+		}
+		if !IsMe(targetProfileId) {
+			targetCount, err = countPostsForProfile(be, userId, targetProfileId)
+			if err != nil {
+				return "", nil, err
+			}
+		}
+		switch oldProfile.Status {
+		case PROFILE_CHARACTER:
+			if oldCount == 0 {
+				return "", nil, appError(fmt.Sprintf("Character profile `%s` isn't used by any messages. You can delete it with `/character delete %s`.", oldProfileId, oldProfileId), nil)
+			}
+			break
+		case PROFILE_ME:
+			return "", nil, appError("Cannot make your real profile into something else. Use the Mattermost built-in functionality to change the display name or profile picture for your real Mattermost profile.", nil)
+		case PROFILE_CORRUPT:
+			if oldCount == 0 {
+				return "", nil, appError(fmt.Sprintf("Character profile `%s` is corrupt, and isn't used by any messages. You can delete it with `/character delete %s`.", oldProfileId, oldProfileId), nil)
+			}
+			return "", nil, appError(fmt.Sprintf("Character profile `%s` is corrupt, but is still used by %d messages. Before you try to make this character profile into something else, you need to delete and recreate it. The messages will not be affected by deleting the profile.", oldProfileId, oldCount), nil)
+		case PROFILE_NONEXISTENT:
+			if oldCount == 0 {
+				return "", nil, appError(fmt.Sprintf("Character profile `%s` doesn't exist, and isn't used by any messages.", oldProfileId), nil)
+			}
+			return "", nil, appError(fmt.Sprintf("Character profile `%s` doesn't exist, but is still used by %d messages. Create a character profile with this identifier in order to manage those messages.", oldProfileId, oldCount), nil)
+			break
+		default:
+			return "", nil, appError("Unexpected profile type", nil)
+		}
+		// We now know that oldCount > 0 && oldProfile.Status == PROFILE_CHARACTER
+		switch targetProfile.Status {
+		case PROFILE_CHARACTER:
+			break
+		case PROFILE_ME:
+			break
+		case PROFILE_CORRUPT:
+			return "", nil, appError(fmt.Sprintf("Target character profile `%s` is corrupt.", targetProfileId), nil)
+		case PROFILE_NONEXISTENT:
+			if targetCount > 0 {
+				return "", nil, appError(fmt.Sprintf("Target character profile `%s` doesn't exist, but since it is still used by %d messages you must recreate it before you can make another character profile into it.", targetProfileId, targetCount), nil)
+			}
+			break
+		default:
+			return "", nil, appError("Unexpected profile type", nil)
+		}
+		// We now know that oldCount > 0 && oldProfile.Status == PROFILE_CHARACTER && (targetProfile.Status != PROFILE_CORRUPT) && (targetProfile.Status != PROFILE_NONEXISTENT || targetCount == 0)
+		confirmMsg := ""
+		newProfile := targetProfile
+		switch targetProfile.Status {
+		case PROFILE_CHARACTER:
+			confirmMsg = fmt.Sprintf("Target character profile `%s` already exists, and is used by %d messages. Modifying %d messages that currently use character profile `%s` to instead use character profile `%s` isn't easily reversible since the two sets of messages would be mixed together.", targetProfileId, targetCount, oldCount, oldProfileId, targetProfileId)
+			break
+		case PROFILE_ME:
+			confirmMsg = fmt.Sprintf("Modifying %d messages that currently use character profile `%s` to instead use your real profile isn't easily reversible since they'd be mixed in with any other messages you have sent using your real profile. Also, messages that use your real profile can only be changed to use a character profile by editing them individually.", oldCount, oldProfileId)
+			break
+		case PROFILE_NONEXISTENT:
+			// Create new profile
+			newProfile = &Profile{
+				UserId:        userId,
+				Identifier:    targetProfileId,
+				Name:          oldProfile.Name,
+				PictureFileId: oldProfile.PictureFileId,
+				Status:        PROFILE_CHARACTER,
+				RequestKey:    oldProfile.RequestKey,
+			}
+			err = setProfile(be, userId, newProfile)
+			if err != nil {
+				return "", nil, err
+			}
+		}
+		if !confirmed && confirmMsg != "" {
+			retMsg, retAtt := uiConfirmation(fmt.Sprintf("%s Are you sure you want to continue?", confirmMsg), command, rootId)
+			return retMsg, retAtt, nil
+		}
+		// Update all existing messages that uses the old profile.
+		newProfileId := newProfile.Identifier
+		err = updatePostsForProfile(be, userId, oldProfileId, newProfileId)
+		if err != nil {
+			return "", nil, err
+		}
+		// Delete old profile
+		err = deleteProfile(be, userId, oldProfileId)
+		if err != nil {
+			return "", nil, err
+		}
+		successMsg := ""
+		switch targetProfile.Status {
+		case PROFILE_CHARACTER:
+			successMsg = fmt.Sprintf("All messages that used character profile `%s` now use character profile `%s` instead. Character profile `%s` has been deleted.", oldProfileId, targetProfileId, oldProfileId)
+			break
+		case PROFILE_ME:
+			successMsg = fmt.Sprintf("All messages that used character profile `%s` now use your real profile instead. Character profile `%s` has been deleted.", oldProfileId, oldProfileId)
+			break
+		case PROFILE_NONEXISTENT:
+			successMsg = fmt.Sprintf("Changed identifier for character profile `%s` to `%s`.", oldProfileId, newProfileId)
+			break
+		}
+		return successMsg, attachmentsFromProfile(be, *newProfile), nil
+	}
+
 	// `/character I am haddock`: Set default character profile identifier for the current channel to `haddock`.
 	// `/character I am myself`: Remove the default character profile for the current channel.
 	matches = regexp.MustCompile(`^I am ([a-z]+)$`).FindStringSubmatch(query)
@@ -176,8 +295,8 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 		if err != nil {
 			return "", nil, err
 		}
-		if isMe(newProfileId) {
-			if isMe(oldProfileId) {
+		if IsMe(newProfileId) {
+			if IsMe(oldProfileId) {
 				return "You are already yourself. Multiplicity was a fun movie, but let's leave it at that.", nil, nil
 			}
 			err := removeDefaultProfile(be, userId, channelId)
@@ -282,7 +401,7 @@ func attachmentFromProfile(be Backend, profile Profile) *model.SlackAttachment {
 		}
 	case PROFILE_CORRUPT:
 		return &model.SlackAttachment{
-			Text:     fmt.Sprintf("**%s** *(corrupt profile)*\n`%s`\nError: %s", profile.Name, profile.Identifier, errStr(profile.Error)),
+			Text:     fmt.Sprintf("**%s** *(corrupt profile)*\n`%s`\nError: %s", profile.Name, profile.Identifier, ErrStr(profile.Error)),
 			ThumbURL: thumbUrl,
 			Color:    "#ff0000",
 		}

@@ -23,6 +23,7 @@ type Backend interface {
 	KVSet(key string, value []byte) *model.AppError
 	NewId() string
 	ReadFile(path string) ([]byte, *model.AppError)
+	UpdateEphemeralPost(userId string, post *model.Post) *model.Post
 	UpdatePost(post *model.Post) (*model.Post, *model.AppError)
 }
 
@@ -73,6 +74,9 @@ func (b BackendImpl) NewId() string {
 }
 func (b BackendImpl) ReadFile(path string) ([]byte, *model.AppError) {
 	return b.API.ReadFile(path)
+}
+func (b BackendImpl) UpdateEphemeralPost(userId string, post *model.Post) *model.Post {
+	return b.API.UpdateEphemeralPost(userId, post)
 }
 func (b BackendImpl) UpdatePost(post *model.Post) (*model.Post, *model.AppError) {
 	return b.API.UpdatePost(post)

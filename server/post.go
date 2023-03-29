@@ -120,14 +120,22 @@ func getIdsetKey(userId, profileId string) string {
 	return fmt.Sprintf("profiledpost_%s_%s", userId, profileId)
 }
 
-func updatePostsUsingProfile(be Backend, userId, profileId string) *model.AppError {
-	pre := fmt.Sprintf("updatePostsUsingProfile(%s, %s): ", userId, profileId)
-	profile, err := GetProfile(be, userId, profileId, PROFILE_CHARACTER)
+// updatePostsForProfile updates all posts of the given user that use the given
+// profile identifier to use the new profile identifier. Provide an empty string
+// for newProfileId to remove the profile identifier from the posts and instead
+// use the default profile. Provide the same value for oldProfileId and
+// newProfileId to update the display name and icon of the posts.
+func updatePostsForProfile(be Backend, userId, oldProfileId, newProfileId string) *model.AppError {
+	pre := fmt.Sprintf("updatePostsUsingProfile(%s, %s, %s)", userId, oldProfileId, newProfileId)
+	if IsMe(oldProfileId) {
+		return appError(pre+"Cannot update posts that are using the user's real profile.", nil)
+	}
+	newProfile, err := GetProfile(be, userId, newProfileId, PROFILE_CHARACTER|PROFILE_ME)
 	if err != nil {
 		return appErrorPre(pre, err)
 	}
-	key := getIdsetKey(userId, profileId)
-	err = IdsetIter(be, key, "", 0, func(postId string) *model.AppError {
+	oldKey := getIdsetKey(userId, oldProfileId)
+	err = IdsetIter(be, oldKey, "", 0, func(postId string) *model.AppError {
 		post, err := GetPostIfExists(be, postId)
 		if err != nil {
 			return err
@@ -151,25 +159,36 @@ func updatePostsUsingProfile(be Backend, userId, profileId string) *model.AppErr
 		if !ok {
 			return appError(fmt.Sprintf("Post \"%s\" has a profile_identifier that is not null or string", postId), nil)
 		}
-		if profileIdOfPostStr != profileId {
+		if profileIdOfPostStr != oldProfileId {
 			// This post is not using the profile we're updating, so skip it. This can
 			// happen if the post was edited to use a different profile.
 			return nil
 		}
-		profiledPost, errStr := profilePost(be, DeepClonePost(post), *profile)
+		profiledPost, errStr := profilePost(be, DeepClonePost(post), *newProfile)
 		if errStr != "" {
 			return appError(errStr, nil)
 		}
 		// If post is unchanged, don't update it.
 		if profiledPost.Message == post.Message &&
+			profiledPost.Props["profile_identifier"] == post.Props["profile_identifier"] &&
 			profiledPost.Props["override_username"] == post.Props["override_username"] &&
 			profiledPost.Props["override_icon_url"] == post.Props["override_icon_url"] &&
 			profiledPost.Props["from_webhook"] == post.Props["from_webhook"] {
 			return nil
 		}
+		// Update the post. This will also insert it into the new idset.
 		_, err = be.UpdatePost(profiledPost)
 		if err != nil {
 			return err
+		}
+		if profiledPost.Props["profile_identifier"] != oldProfileId {
+			// The post was updated to use a different profile, so remove it from the
+			// old idset. This is ok to do inside the iteration; we will not miss any
+			// unrelated ids.
+			err = IdsetRemove(be, oldKey, postId)
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -202,4 +221,31 @@ func DeepClonePost(post *model.Post) *model.Post {
 		ret.Props[k] = v
 	}
 	return ret
+}
+
+// countPostsForProfile returns the number of posts that use the given profile
+func countPostsForProfile(be Backend, userId, profileId string) (int, *model.AppError) {
+	pre := fmt.Sprintf("countPostsForProfile(%s, %s): ", userId, profileId)
+	if IsMe(profileId) {
+		return 0, appError(pre+"Cannot count posts that are using the user's real profile.", nil)
+	}
+	key := getIdsetKey(userId, profileId)
+	count := 0
+	err := IdsetIter(be, key, "", 0, func(postId string) *model.AppError {
+		post, err := GetPostIfExists(be, postId)
+		if err != nil {
+			return err
+		}
+		if post == nil {
+			// API did not return a post, so it must have been deleted. That's fine,
+			// we'll just ignore it.
+			return nil
+		}
+		count++
+		return nil
+	})
+	if err != nil {
+		return 0, appErrorPre(pre, err)
+	}
+	return count, nil
 }

@@ -122,7 +122,7 @@ func (profile *Profile) validate(profileId string) *model.AppError {
 		if profile.Error != nil {
 			return appError(pre+"Error is set despite status being PROFILE_CHARACTER.", nil)
 		}
-		if isMe(profile.Identifier) {
+		if IsMe(profile.Identifier) {
 			return appError(pre+"Identifier indicates real profile despite status being PROFILE_CHARACTER.", nil)
 		}
 		break
@@ -130,7 +130,7 @@ func (profile *Profile) validate(profileId string) *model.AppError {
 		if profile.Error != nil {
 			return appError(pre+"Error is set despite status being PROFILE_ME.", nil)
 		}
-		if !isMe(profile.Identifier) {
+		if !IsMe(profile.Identifier) {
 			return appError(pre+"Identifier does not indicate real profile despite status being PROFILE_ME.", nil)
 		}
 		break
@@ -166,7 +166,7 @@ func profileExists(be Backend, userId, profileId string) (bool, *model.AppError)
 
 func GetProfile(be Backend, userId, profileId string, accepted int) (*Profile, *model.AppError) {
 	// Handle the real profile
-	if isMe(profileId) {
+	if IsMe(profileId) {
 		if accepted&PROFILE_ME != 0 {
 			user, err := be.GetUser(userId)
 			if err != nil {
@@ -343,7 +343,7 @@ func setDefaultProfileIdentifier(be Backend, userId, channelId, profileId string
 }
 
 func GetPluginURL(be Backend) string {
-	return be.GetSiteURL() + "/plugins/com.axelsvensson.mattermost-plugin-character-profiles"
+	return be.GetSiteURL() + "/plugins/" + PLUGIN_ID
 }
 
 func profileIconUrl(be Backend, profile Profile, thumbnail bool) string {

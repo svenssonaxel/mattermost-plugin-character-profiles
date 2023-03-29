@@ -14,7 +14,7 @@ func appError(message string, err error) *model.AppError {
 	return model.NewAppError("Character Profile Plugin", message, nil, errorMessage, http.StatusBadRequest)
 }
 
-func errStr(err *model.AppError) string {
+func ErrStr(err *model.AppError) string {
 	if err == nil {
 		return "Error is nil"
 	}

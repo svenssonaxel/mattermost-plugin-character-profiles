@@ -9,6 +9,11 @@ import (
 	"github.com/mattermost/mattermost-server/v5/plugin"
 )
 
+const (
+	PLUGIN_ID       = "com.axelsvensson.mattermost-plugin-character-profiles"
+	BOT_DISPLAYNAME = "Character Profiles"
+)
+
 // Plugin implements the interface expected by the Mattermost server to communicate between the server and plugin processes.
 type Plugin struct {
 	plugin.MattermostPlugin
@@ -35,16 +40,16 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 	channelId := args.ChannelId
 	teamId := args.TeamId
 
-	responseMessage, attachments, err := DoExecuteCommand(p.backend, args.Command, userId, channelId, teamId, args.RootId)
+	responseMessage, attachments, err := DoExecuteCommand(p.backend, args.Command, userId, channelId, teamId, args.RootId, false)
 
 	if err != nil {
 		return nil, err
 	}
 
-	if responseMessage != "" {
+	if responseMessage != "" || len(attachments) > 0 {
 		iconURL := GetPluginURL(p.backend) + "/static/botprofilepicture"
 		return &model.CommandResponse{
-			Username:     "Character Profiles",
+			Username:     BOT_DISPLAYNAME,
 			IconURL:      iconURL,
 			ResponseType: model.COMMAND_RESPONSE_TYPE_EPHEMERAL,
 			Text:         responseMessage,

@@ -8,6 +8,7 @@ In order to act as several PCs or NPCs, you create a "character profile" for eac
 - `/character picture haddock`: Modify an existing character profile by updating the profile picture to the picture uploaded in the parent message, leaving the display name as it is. (Note that you can **not** attach a picture to the slash command itself, for technical reasons.)
 - `/character delete haddock`: Delete character profile with identifier `haddock`.
 - `/character list`: List your character profiles.
+- `/character make haddock into milou`: Unless character profile `milou` already exists, create it with the same display name and profile picture as character profile `haddock`. Then, modify all existing messages that use character profile `haddock` to instead use character profile `milou`, and delete character profile `haddock`.
 
 ## Set a default character profile
 Sometimes, e.g. for PCs, you want to use a certain character profile for most messages. For each channel, you can set a default character profile identifier that will be used for all messages except those sent using the single message functionality described below.

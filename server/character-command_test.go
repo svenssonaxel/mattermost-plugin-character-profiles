@@ -1,9 +1,13 @@
 package main_test
 
 import (
+	"bytes"
 	_ "embed"
 	"fmt"
+	"math/rand"
+	"strconv"
 	"testing"
+	"text/template"
 
 	"github.com/stretchr/testify/assert"
 
@@ -15,15 +19,15 @@ import (
 func TestScenario1(t *testing.T) {
 	var (
 		siteURL  = "http://mocksite.tld"
-		channel1 = "channel1_________________"
-		channel2 = "channel2_________________"
-		file1    = "file1_____________________"
-		file2    = "file2_____________________"
-		post1    = "post1_____________________"
-		post2    = "post2_____________________"
-		team1    = "team1_____________________"
-		user1    = "user1_____________________"
-		user2    = "user2_____________________"
+		channel1 = "channel1aaaaaaaaaaaaaaaaaa"
+		channel2 = "channel2aaaaaaaaaaaaaaaaaa"
+		file1    = "file1aaaaaaaaaaaaaaaaaaaaa"
+		file2    = "file2aaaaaaaaaaaaaaaaaaaaa"
+		post1    = "post1aaaaaaaaaaaaaaaaaaaaa"
+		post2    = "post2aaaaaaaaaaaaaaaaaaaaa"
+		team1    = "team1aaaaaaaaaaaaaaaaaaaaa"
+		user1    = "user1aaaaaaaaaaaaaaaaaaaaa"
+		user2    = "user2aaaaaaaaaaaaaaaaaaaaa"
 	)
 	// Initialize the backend mock
 	be := main.BackendMock{
@@ -89,7 +93,7 @@ func TestScenario1(t *testing.T) {
 				if thumb {
 					t = "/thumbnail"
 				}
-				return fmt.Sprintf("%s/plugins/com.axelsvensson.mattermost-plugin-character-profiles/profile/%s/%s%s?rk=%s", be.GetSiteURL(), userId, profileIdentifier, t, rk)
+				return fmt.Sprintf("%s/plugins/%s/profile/%s/%s%s?rk=%s", be.GetSiteURL(), main.PLUGIN_ID, userId, profileIdentifier, t, rk)
 			}
 		}
 		user1haddockImg = characterImage(be, user1, "haddock")
@@ -257,19 +261,191 @@ func TestScenario1(t *testing.T) {
 	// Check that posts previously made using the first profile has the new display name
 	for _, postId := range []string{post3, post6} {
 		msg := fmt.Sprintf("Checking username of post %s", postId)
-		post, err := be.GetPost(postId)
+		postObj, err := be.GetPost(postId)
 		assert.Nil(t, err, msg)
-		overrideUsername, ok := post.Props["override_username"]
+		overrideUsername, ok := postObj.Props["override_username"]
 		assert.True(t, ok, msg)
 		assert.Equal(t, "Mr Haddock Sr", overrideUsername, msg)
 	}
 	// Check that a post first made using the first profile, then edited to use the default profile, is unaffected by the profile change
 	msg := fmt.Sprintf("Checking username of post %s", post5)
-	post, err := be.GetPost(post5)
+	postObj, err := be.GetPost(post5)
 	assert.Nil(t, err, msg)
-	overrideUsername, ok := post.Props["override_username"]
+	overrideUsername, ok := postObj.Props["override_username"]
 	assert.True(t, ok, msg)
 	assert.Equal(t, nil, overrideUsername, msg)
+	// Test /character make
+	type TestCase struct {
+		expectSuccess bool
+		msg           string
+		resProfile    int
+		p1PostCount   int
+		p1Status      int
+		p2PostCount   int
+		p2Status      int
+	}
+	const (
+		OLD  = 0
+		NEW  = 1
+		NONE = 2
+	)
+	for testIdx, testcase := range []TestCase{
+		{true, "All messages that used character profile `{{.f}}` now use character profile `{{.t}}` instead. Character profile `{{.f}}` has been deleted.", NEW,
+			2, main.PROFILE_CHARACTER,
+			2, main.PROFILE_CHARACTER},
+		{false, "Character Profile Plugin: Character profile `{{.f}}` isn't used by any messages. You can delete it with `/character delete {{.f}}`.", NONE,
+			0, main.PROFILE_CHARACTER,
+			2, main.PROFILE_CHARACTER},
+		{true, "All messages that used character profile `{{.f}}` now use character profile `{{.t}}` instead. Character profile `{{.f}}` has been deleted.", NEW,
+			2, main.PROFILE_CHARACTER,
+			0, main.PROFILE_CHARACTER},
+		{false, "Character Profile Plugin: Character profile `{{.f}}` isn't used by any messages. You can delete it with `/character delete {{.f}}`.", NONE,
+			0, main.PROFILE_CHARACTER,
+			0, main.PROFILE_CHARACTER},
+		{true, "All messages that used character profile `{{.f}}` now use your real profile instead. Character profile `{{.f}}` has been deleted.", NEW,
+			2, main.PROFILE_CHARACTER,
+			0, main.PROFILE_ME},
+		{false, "Character Profile Plugin: Character profile `{{.f}}` isn't used by any messages. You can delete it with `/character delete {{.f}}`.", NONE,
+			0, main.PROFILE_CHARACTER,
+			2, main.PROFILE_ME},
+		{false, "Character Profile Plugin: Target character profile `{{.t}}` is corrupt.", NONE,
+			2, main.PROFILE_CHARACTER,
+			2, main.PROFILE_CORRUPT},
+		{false, "Character Profile Plugin: Target character profile `{{.t}}` doesn't exist, but since it is still used by {{.c}} messages you must recreate it before you can make another character profile into it.", NONE,
+			2, main.PROFILE_CHARACTER,
+			2, main.PROFILE_NONEXISTENT},
+		{true, "Changed identifier for character profile `{{.f}}` to `{{.t}}`.", OLD,
+			2, main.PROFILE_CHARACTER,
+			0, main.PROFILE_NONEXISTENT},
+		{false, "Character Profile Plugin: Cannot make your real profile into something else. Use the Mattermost built-in functionality to change the display name or profile picture for your real Mattermost profile.", NONE,
+			2, main.PROFILE_ME,
+			2, main.PROFILE_CHARACTER},
+		{false, "Character Profile Plugin: Character profile `{{.f}}` is corrupt, but is still used by {{.c}} messages. Before you try to make this character profile into something else, you need to delete and recreate it. The messages will not be affected by deleting the profile.", NONE,
+			2, main.PROFILE_CORRUPT,
+			2, main.PROFILE_CHARACTER},
+		{false, "Character Profile Plugin: Character profile `{{.f}}` is corrupt, and isn't used by any messages. You can delete it with `/character delete {{.f}}`.", NONE,
+			0, main.PROFILE_CORRUPT,
+			2, main.PROFILE_CHARACTER},
+		{false, "Character Profile Plugin: Character profile `{{.f}}` doesn't exist, but is still used by {{.c}} messages. Create a character profile with this identifier in order to manage those messages.", NONE,
+			2, main.PROFILE_NONEXISTENT,
+			2, main.PROFILE_CHARACTER},
+		{false, "Character Profile Plugin: Character profile `{{.f}}` doesn't exist, and isn't used by any messages.", NONE,
+			0, main.PROFILE_NONEXISTENT,
+			2, main.PROFILE_CHARACTER},
+	} {
+		msg := fmt.Sprintf("Test %d: %s", testIdx, testcase.msg)
+		newPId := func(b main.BackendMock) string {
+			*b.IdCounter++
+			r := rand.NewSource(int64(*b.IdCounter))
+			chars := "abcdefghijklmnopqrstuvwxyz"
+			ret := ""
+			for i := 0; i < 10; i++ {
+				ret += string(chars[r.Int63()%26])
+			}
+			return ret
+		}
+		channel := channel2 // Use channel2 for all tests, since it is using the real profile
+		setup := func(postCount, status int) (string, string, []string) {
+			var pId, pName, message string
+			var pPostIds []string
+			if status == main.PROFILE_ME {
+				pId = "me"
+				message = "Test message from user-number-one"
+			} else {
+				pId = newPId(be)
+				pName = be.NewId()
+				cmd(be, fmt.Sprintf("/character %s=%s", pId, pName), user1, channel, team1, "", t,
+					fmt.Sprintf("Character profile `%s` created with display name \"%s\"", pId, pName),
+					[]tAtt{{"**" + pName + "**\n`" + pId + "`",
+						blue, characterImg},
+					})
+				message = fmt.Sprintf("%s: Test message from %s", pId, pName)
+			}
+			for i := 0; i < postCount; i++ {
+				postId := post(be, t, &model.Post{UserId: user1, ChannelId: channel, Message: message}, pId, pName, characterImg)
+				pPostIds = append(pPostIds, postId)
+			}
+			switch status {
+			case main.PROFILE_CHARACTER, main.PROFILE_ME:
+				break
+			case main.PROFILE_CORRUPT:
+				// Corrupt the profile
+				cmd(be, fmt.Sprintf("/character corrupt1 %s", pId), user1, channel, team1, "", t,
+					fmt.Sprintf("Successfully corrupted profile `%s` using method 1.", pId),
+					[]tAtt{},
+				)
+			case main.PROFILE_NONEXISTENT:
+				// Delete the profile
+				cmd(be, fmt.Sprintf("/character delete %s", pId), user1, channel, team1, "", t,
+					fmt.Sprintf("Deleted character profile `%s`.", pId),
+					[]tAtt{},
+				)
+			}
+			return pId, pName, pPostIds
+		}
+		p1Id, p1Name, p1PostIds := setup(testcase.p1PostCount, testcase.p1Status)
+		p2Id, p2Name, p2PostIds := setup(testcase.p2PostCount, testcase.p2Status)
+		checkPostProfile := func(postIds []string, pId, pName string) {
+			for _, postId := range postIds {
+				postObj, err := be.GetPost(postId)
+				assert.Nil(t, err, msg)
+				profileId, ok := postObj.Props["profile_identifier"]
+				assert.True(t, ok, msg)
+				overrideUsername, ok := postObj.Props["override_username"]
+				assert.True(t, ok, msg)
+				if main.IsMe(pId) {
+					assert.Equal(t, nil, profileId, msg)
+					assert.Equal(t, nil, overrideUsername, msg)
+				} else {
+					assert.Equal(t, pId, profileId, msg)
+					assert.Equal(t, pName, overrideUsername, msg)
+				}
+			}
+		}
+		tmpl, err := template.New("test").Parse(testcase.msg)
+		assert.Nil(t, err, msg)
+		var buf bytes.Buffer
+		err = tmpl.Execute(&buf, map[string]string{"f": p1Id, "t": p2Id, "c": strconv.Itoa(testcase.p1PostCount)})
+		assert.Nil(t, err, msg)
+		response := buf.String()
+		resProfile := testcase.resProfile
+		if testcase.expectSuccess {
+			var att []tAtt
+			var resName string
+			switch resProfile {
+			case OLD:
+				att = []tAtt{{"**" + p1Name + "**\n`" + p2Id + "`",
+					blue, characterImg},
+				}
+				resName = p1Name
+				break
+			case NEW:
+				att = []tAtt{{"**" + p2Name + "**\n`" + p2Id + "`",
+					blue, characterImg},
+				}
+				resName = p2Name
+				if main.IsMe(p2Id) {
+					att = []tAtt{{"**user-number-one** *(your real profile)*\n`me`, `myself`",
+						green, user1image}}
+					resName = ""
+				}
+				break
+			default:
+				assert.Fail(t, "Invalid resProfile", msg)
+			}
+			cmd(be, fmt.Sprintf("/character make %s into %s", p1Id, p2Id), user1, channel, team1, "", t,
+				response,
+				att)
+			checkPostProfile(p1PostIds, p2Id, resName)
+			checkPostProfile(p2PostIds, p2Id, resName)
+		} else {
+			cmdFail(be, fmt.Sprintf("/character make %s into %s", p1Id, p2Id), user1, channel, team1, "", t,
+				response,
+			)
+			checkPostProfile(p1PostIds, p1Id, p1Name)
+			checkPostProfile(p2PostIds, p2Id, p2Name)
+		}
+	}
 }
 
 type tAtt struct {
@@ -281,7 +457,7 @@ type tAtt struct {
 func cmd(be main.Backend, command, userId, channelId, teamId, rootId string,
 	t *testing.T, expectedResponse string, expectedAttachments []tAtt) {
 	msg := fmt.Sprintf("Command: %s", command)
-	response, attachments, err := main.DoExecuteCommand(be, command, userId, channelId, teamId, rootId)
+	response, attachments, err := main.DoExecuteCommand(be, command, userId, channelId, teamId, rootId, true)
 	assert.Nil(t, err, msg)
 	assert.Equal(t, expectedResponse, response, msg)
 	assert.Equal(t, len(expectedAttachments), len(attachments), msg)
@@ -290,6 +466,16 @@ func cmd(be main.Backend, command, userId, channelId, teamId, rootId string,
 		assert.Equal(t, expectedAttachment.Color, attachments[i].Color, msg)
 		assert.Equal(t, expectedAttachment.GetImgURL(true), attachments[i].ThumbURL, msg)
 	}
+}
+
+func cmdFail(be main.Backend, command, userId, channelId, teamId, rootId string,
+	t *testing.T, expectedError string) {
+	msg := fmt.Sprintf("Command: %s", command)
+	response, attachments, err := main.DoExecuteCommand(be, command, userId, channelId, teamId, rootId, true)
+	assert.NotNil(t, err, msg)
+	assert.Equal(t, expectedError, main.ErrStr(err), msg)
+	assert.Equal(t, "", response, msg)
+	assert.Equal(t, 0, len(attachments), msg)
 }
 
 func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProfile, expectedDisplayName string, getExpectedImgURL func(thumb bool) string) string {
@@ -301,7 +487,7 @@ func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProf
 	}
 	_, postAlreadyExists := be.Posts[post.Id]
 	assert.False(t, postAlreadyExists, msg)
-	if expectedProfile == "" {
+	if main.IsMe(expectedProfile) {
 		assert.Nil(t, post.Props["profile_identifier"], msg)
 		assert.Nil(t, post.Props["override_username"], msg)
 		assert.Nil(t, post.Props["override_icon_url"], msg)

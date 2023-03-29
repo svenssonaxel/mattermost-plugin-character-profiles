@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/gorilla/mux"
 	"net/http"
 	"net/url"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mattermost/mattermost-server/v5/api4"
+	"github.com/mattermost/mattermost-server/v5/model"
 )
 
 func routerFromBackend(be Backend) *mux.Router {
@@ -24,6 +27,12 @@ func routerFromBackend(be Backend) *mux.Router {
 	})
 	router.HandleFunc("/profile/{userId:[a-z0-9]{26}}/{profileId:[a-z]+}/thumbnail", func(w http.ResponseWriter, r *http.Request) {
 		serveProfileImage(be, w, r, mux.Vars(r)["userId"], mux.Vars(r)["profileId"], r.URL.Query().Get("rk"), true)
+	})
+	router.HandleFunc("/api/v1/confirm", func(w http.ResponseWriter, r *http.Request) {
+		serveConfirm(be, w, r)
+	})
+	router.HandleFunc("/api/v1/echo", func(w http.ResponseWriter, r *http.Request) {
+		serveEcho(be, w, r)
 	})
 	return router
 }
@@ -60,7 +69,7 @@ func serveStaticFile(be Backend, w http.ResponseWriter, r *http.Request, path st
 func serveProfileImage(be Backend, w http.ResponseWriter, r *http.Request, userId string, profileId string, requestKey string, thumbnail bool) {
 	profile, err := GetProfile(be, userId, profileId, PROFILE_CORRUPT|PROFILE_CHARACTER|PROFILE_NONEXISTENT)
 	if err != nil {
-		http.Error(w, errStr(err), http.StatusInternalServerError)
+		http.Error(w, ErrStr(err), http.StatusInternalServerError)
 		return
 	}
 	if profile == nil || profile.Status == PROFILE_NONEXISTENT {
@@ -94,7 +103,7 @@ func serveProfileImage(be Backend, w http.ResponseWriter, r *http.Request, userI
 	contentType := ""
 	if thumbnail {
 		path = info.ThumbnailPath
-		contentType = api4.THUMBNAIL_IMAGE_TYPE
+		contentType = api4.ThumbnailImageType
 	} else {
 		path = info.Path
 		contentType = info.MimeType
@@ -105,14 +114,14 @@ func serveProfileImage(be Backend, w http.ResponseWriter, r *http.Request, userI
 	}
 	content, cErr := be.ReadFile(path)
 	if cErr != nil {
-		http.Error(w, errStr(cErr), http.StatusInternalServerError)
+		http.Error(w, ErrStr(cErr), http.StatusInternalServerError)
 		return
 	}
 	filename := url.PathEscape(info.Name)
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	} else {
-		for _, unsafeContentType := range api4.UNSAFE_CONTENT_TYPES {
+		for _, unsafeContentType := range api4.UnsafeContentTypes {
 			if strings.HasPrefix(contentType, unsafeContentType) {
 				contentType = "text/plain"
 				break
@@ -128,5 +137,87 @@ func serveProfileImage(be Backend, w http.ResponseWriter, r *http.Request, userI
 	header.Set("X-Content-Type-Options", "nosniff")
 	header.Set("X-Frame-Options", "DENY")
 	w.Write(content)
-	// todo how to end content?
+}
+
+func serveConfirm(be Backend, w http.ResponseWriter, r *http.Request) {
+	userId := r.Header.Get("Mattermost-User-ID")
+	var body struct {
+		UserId    string `json:"user_id"`
+		PostId    string `json:"post_id"`
+		ChannelId string `json:"channel_id"`
+		TeamId    string `json:"team_id"`
+		Context   struct {
+			Command string `json:"command"`
+			RootId  string `json:"root_id"`
+		} `json:"context"`
+	}
+	dErr := json.NewDecoder(r.Body).Decode(&body)
+	if dErr != nil {
+		http.Error(w, dErr.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.UserId != userId {
+		http.Error(w, "User ID mismatch", http.StatusBadRequest)
+		return
+	}
+	command := body.Context.Command
+	rootId := body.Context.RootId
+	msg, attachments, eErr := DoExecuteCommand(be, command, userId, body.ChannelId, body.TeamId, rootId, true)
+	iconURL := GetPluginURL(be) + "/static/botprofilepicture"
+	if eErr != nil {
+		msg, attachments = uiError(fmt.Sprintf("Command `%s` failed:\n%s", command, eErr.Error()), command, rootId)
+	}
+	be.UpdateEphemeralPost(userId, &model.Post{
+		Id:        body.PostId,
+		UserId:    userId,
+		ChannelId: body.ChannelId,
+		RootId:    rootId,
+		Message:   msg,
+		Props: model.StringInterface{
+			"attachments":       attachments,
+			"override_username": BOT_DISPLAYNAME,
+			"override_icon_url": iconURL,
+			"from_webhook":      "true",
+		},
+	})
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte{})
+}
+
+func serveEcho(be Backend, w http.ResponseWriter, r *http.Request) {
+	userId := r.Header.Get("Mattermost-User-ID")
+	var body struct {
+		UserId    string `json:"user_id"`
+		PostId    string `json:"post_id"`
+		ChannelId string `json:"channel_id"`
+		TeamId    string `json:"team_id"`
+		Context   struct {
+			Message string `json:"message"`
+			RootId  string `json:"root_id"`
+		} `json:"context"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.UserId != userId {
+		http.Error(w, "User ID mismatch", http.StatusBadRequest)
+		return
+	}
+	iconURL := GetPluginURL(be) + "/static/botprofilepicture"
+	be.UpdateEphemeralPost(userId, &model.Post{
+		Id:        body.PostId,
+		UserId:    userId,
+		ChannelId: body.ChannelId,
+		RootId:    body.Context.RootId,
+		Message:   body.Context.Message,
+		Props: model.StringInterface{
+			"override_username": BOT_DISPLAYNAME,
+			"override_icon_url": iconURL,
+			"from_webhook":      "true",
+		},
+	})
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte{})
 }
