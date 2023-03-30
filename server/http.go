@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -117,7 +116,7 @@ func serveProfileImage(be Backend, w http.ResponseWriter, r *http.Request, userI
 		http.Error(w, ErrStr(cErr), http.StatusInternalServerError)
 		return
 	}
-	filename := url.PathEscape(info.Name)
+	filename := profile.Identifier + filepath.Ext(info.Name)
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	} else {

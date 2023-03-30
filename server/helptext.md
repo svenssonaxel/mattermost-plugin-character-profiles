@@ -23,4 +23,4 @@ Sometimes, e.g. for NPCs, you want to use character profiles in a one-off fashio
 
 ## Limitations
 - When you edit and save a message, it will use the same profile identifier as when originally sent (or when last edited). If you want to change it, you can prefix the message to use the single message functionality described above. Setting default character profile identifier will never affect message editing.
-- You may use a picture from a private channel as a profile picture, but doing so (necessarily) gives permission to view that image, to everyone who can see messages you send using that profile. The message that contains the picture will however remain private.
+- You may use a picture from a private channel as a profile picture, but doing so (necessarily) gives permission to view that image (named after the profile identifier), to everyone who can see messages you send using that profile. The message that contains the picture as well as the picture filename will however remain private.
