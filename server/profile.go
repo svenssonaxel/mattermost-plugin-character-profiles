@@ -71,7 +71,7 @@ func (profile *Profile) validate(profileId string) *model.AppError {
 	if len(matches) != 1 {
 		return appError(pre+"Identifier must be 1-60 lowercase letters a-z.", nil)
 	}
-	matches = regexp.MustCompile("^[^-*|`>#*_.~[\\]]{1,200}$").FindStringSubmatch(profile.Name)
+	matches = regexp.MustCompile("^[^|`>#*_~[\\]]{1,200}$").FindStringSubmatch(profile.Name)
 	if len(matches) != 1 {
 		return appError(pre+"Display name must be 1-200 characters and must not contain format control characters.", nil)
 	}
