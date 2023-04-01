@@ -168,7 +168,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 			}
 		}
 		if postCount > 0 && !confirmed {
-			retMsg, retAtt := uiConfirmation(fmt.Sprintf("You are about to delete character profile `%s` which is used by %d existing posts. Soon after deletion, the profile picture for these posts will cease to work, but they will retain their display name. In order to manage those posts again, you can recreate the profile using the same identifier. Are you sure you want to proceed?", profileId, postCount), command, rootId)
+			retMsg, retAtt := uiConfirmation(fmt.Sprintf("You are about to delete character profile `%s` which is used by %d existing messages. Soon after deletion, the profile picture for these messages will cease to work, but they will retain their display name. In order to manage those messages again, you can recreate the profile using the same identifier. Are you sure you want to proceed?", profileId, postCount), command, rootId)
 			return retMsg, retAtt, nil
 		}
 		if IsMe(profileId) {

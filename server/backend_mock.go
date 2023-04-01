@@ -87,7 +87,7 @@ func (b BackendMock) GetFileInfo(id string) (*model.FileInfo, *model.AppError) {
 func (b BackendMock) GetPost(id string) (*model.Post, *model.AppError) {
 	post, ok := b.Posts[id]
 	if !ok || post.DeleteAt != 0 {
-		return nil, model.NewAppError("BackendMock", "Unable to get the post.", nil, "", http.StatusNotFound)
+		return nil, model.NewAppError("BackendMock", "Unable to get the message.", nil, "", http.StatusNotFound)
 	}
 	return post, nil
 }
@@ -170,7 +170,7 @@ func (b BackendMock) UpdateEphemeralPost(userId string, post *model.Post) *model
 }
 func (b BackendMock) UpdatePost(post *model.Post) (*model.Post, *model.AppError) {
 	if _, ok := b.Posts[post.Id]; !ok {
-		return nil, appError(fmt.Sprintf("Post \"%s\" not found", post.Id), nil)
+		return nil, appError(fmt.Sprintf("Message \"%s\" not found", post.Id), nil)
 	}
 	b.Posts[post.Id] = post
 	return post, nil

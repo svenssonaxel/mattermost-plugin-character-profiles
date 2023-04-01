@@ -11,7 +11,7 @@ import (
 // RegisterPost adds a post to the corresponding id set.
 func RegisterPost(be Backend, post *model.Post) *model.AppError {
 	if post == nil {
-		return appError("Post is nil", nil)
+		return appError("Message is nil", nil)
 	}
 	profileId := ""
 	profileIdRaw, ok := post.Props["profile_identifier"]
@@ -128,7 +128,7 @@ func getIdsetKey(userId, profileId string) string {
 func updatePostsForProfile(be Backend, userId, oldProfileId, newProfileId string) *model.AppError {
 	pre := fmt.Sprintf("updatePostsUsingProfile(%s, %s, %s)", userId, oldProfileId, newProfileId)
 	if IsMe(oldProfileId) {
-		return appError(pre+"Cannot update posts that are using the user's real profile.", nil)
+		return appError(pre+"Cannot update message that are using the user's real profile.", nil)
 	}
 	newProfile, err := GetProfile(be, userId, newProfileId, PROFILE_CHARACTER|PROFILE_ME)
 	if err != nil {
@@ -146,18 +146,18 @@ func updatePostsForProfile(be Backend, userId, oldProfileId, newProfileId string
 			return nil
 		}
 		if post.UserId != userId {
-			return appError(fmt.Sprintf("Found post with userId \"%s\" but expected \"%s\"", post.UserId, userId), nil)
+			return appError(fmt.Sprintf("Found message with userId \"%s\" but expected \"%s\"", post.UserId, userId), nil)
 		}
 		profileIdOfPost, ok := post.Props["profile_identifier"]
 		if !ok {
-			return appError(fmt.Sprintf("Post \"%s\" has no profile_identifier", postId), nil)
+			return appError(fmt.Sprintf("Message \"%s\" has no profile_identifier", postId), nil)
 		}
 		if profileIdOfPost == nil {
 			profileIdOfPost = ""
 		}
 		profileIdOfPostStr, ok := profileIdOfPost.(string)
 		if !ok {
-			return appError(fmt.Sprintf("Post \"%s\" has a profile_identifier that is not null or string", postId), nil)
+			return appError(fmt.Sprintf("Message \"%s\" has a profile_identifier that is not null or string", postId), nil)
 		}
 		if profileIdOfPostStr != oldProfileId {
 			// This post is not using the profile we're updating, so skip it. This can
@@ -227,7 +227,7 @@ func DeepClonePost(post *model.Post) *model.Post {
 func countPostsForProfile(be Backend, userId, profileId string) (int, *model.AppError) {
 	pre := fmt.Sprintf("countPostsForProfile(%s, %s): ", userId, profileId)
 	if IsMe(profileId) {
-		return 0, appError(pre+"Cannot count posts that are using the user's real profile.", nil)
+		return 0, appError(pre+"Cannot count messages that are using the user's real profile.", nil)
 	}
 	key := getIdsetKey(userId, profileId)
 	count := 0

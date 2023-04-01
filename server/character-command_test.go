@@ -176,7 +176,7 @@ func TestScenario1(t *testing.T) {
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`",
 				blue, user1haddockImg},
-			{"**Milou** *(corrupt profile)*\n`milou`\nError: Character Profile Plugin: Profile `milou` is corrupt and needs to be recreated: Failed to populate profile `milou`: The post supposedly holding the profile picture could not be found, perhaps it's deleted.",
+			{"**Milou** *(corrupt profile)*\n`milou`\nError: Character Profile Plugin: Profile `milou` is corrupt and needs to be recreated: Failed to populate profile `milou`: The message supposedly holding the profile picture could not be found, perhaps it's deleted.",
 				red, nosign},
 			{"**user-number-one** *(your real profile)*\n`me`, `myself`",
 				green, user1image},
@@ -199,7 +199,7 @@ func TestScenario1(t *testing.T) {
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`\nDefault profile in: ~channel-one",
 				blue, user1haddockImg},
-			{"**Milou** *(corrupt profile)*\n`milou`\nError: Character Profile Plugin: Profile `milou` is corrupt and needs to be recreated: Failed to populate profile `milou`: The post supposedly holding the profile picture could not be found, perhaps it's deleted.\nDefault profile in: ~channel-two",
+			{"**Milou** *(corrupt profile)*\n`milou`\nError: Character Profile Plugin: Profile `milou` is corrupt and needs to be recreated: Failed to populate profile `milou`: The message supposedly holding the profile picture could not be found, perhaps it's deleted.\nDefault profile in: ~channel-two",
 				red, nosign},
 		})
 	// Delete the second profile
@@ -260,7 +260,7 @@ func TestScenario1(t *testing.T) {
 		})
 	// Check that posts previously made using the first profile has the new display name
 	for _, postId := range []string{post3, post6} {
-		msg := fmt.Sprintf("Checking username of post %s", postId)
+		msg := fmt.Sprintf("Checking username of message %s", postId)
 		postObj, err := be.GetPost(postId)
 		assert.Nil(t, err, msg)
 		overrideUsername, ok := postObj.Props["override_username"]
@@ -268,7 +268,7 @@ func TestScenario1(t *testing.T) {
 		assert.Equal(t, "Mr Haddock Sr", overrideUsername, msg)
 	}
 	// Check that a post first made using the first profile, then edited to use the default profile, is unaffected by the profile change
-	msg := fmt.Sprintf("Checking username of post %s", post5)
+	msg := fmt.Sprintf("Checking username of message %s", post5)
 	postObj, err := be.GetPost(post5)
 	assert.Nil(t, err, msg)
 	overrideUsername, ok := postObj.Props["override_username"]
@@ -479,7 +479,7 @@ func cmdFail(be main.Backend, command, userId, channelId, teamId, rootId string,
 }
 
 func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProfile, expectedDisplayName string, getExpectedImgURL func(thumb bool) string) string {
-	msg := fmt.Sprintf("CreatePost: %s", inputPost.Id)
+	msg := fmt.Sprintf("Create message: %s", inputPost.Id)
 	post, errStr := main.ProfiledPost(be, inputPost, false)
 	assert.Equal(t, "", errStr, msg)
 	if post == nil {
@@ -505,7 +505,7 @@ func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProf
 }
 
 func editPost(be main.BackendMock, t *testing.T, postId string, newMessage string, expectedProfile, expectedDisplayName string, getExpectedImgURL func(thumb bool) string) {
-	msg := fmt.Sprintf("EditPost: %s", postId)
+	msg := fmt.Sprintf("Edit message: %s", postId)
 	post, pErr := be.GetPost(postId)
 	assert.Nil(t, pErr, msg)
 	assert.NotNil(t, post, msg)

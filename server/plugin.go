@@ -117,14 +117,14 @@ func (p *Plugin) MessageWillBeUpdated(_ *plugin.Context, newPost *model.Post, _ 
 func (p *Plugin) MessageHasBeenPosted(_ *plugin.Context, post *model.Post) {
 	err := RegisterPost(p.backend, post)
 	if err != nil {
-		p.API.LogError("Failed to register post", "error", err.Error())
+		p.API.LogError("Failed to register message", "error", err.Error())
 	}
 }
 
 func (p *Plugin) MessageHasBeenUpdated(_ *plugin.Context, newPost *model.Post, _ *model.Post) {
 	err := RegisterPost(p.backend, newPost)
 	if err != nil {
-		p.API.LogError("Failed to register post", "error", err.Error())
+		p.API.LogError("Failed to register message", "error", err.Error())
 	}
 }
 

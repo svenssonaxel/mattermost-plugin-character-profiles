@@ -53,7 +53,7 @@ func populateProfile(be Backend, profile *Profile) *model.AppError {
 			return appErrorPre(pre, err)
 		}
 		if profile.PicturePost == nil {
-			return appError(pre+"The post supposedly holding the profile picture could not be found, perhaps it's deleted.", nil)
+			return appError(pre+"The message supposedly holding the profile picture could not be found, perhaps it's deleted.", nil)
 		}
 	}
 	return nil
@@ -101,17 +101,17 @@ func (profile *Profile) validate(profileId string) *model.AppError {
 		}
 		post := profile.PicturePost
 		if post == nil {
-			return appError(pre+"The post supposedly holding the profile picture is nil.", nil)
+			return appError(pre+"The message supposedly holding the profile picture is nil.", nil)
 		}
 		if post.DeleteAt != 0 {
 			// This probably can't happen because the API doesn't return deleted posts.
-			return appError(pre+"The post supposedly holding the profile picture is deleted.", nil)
+			return appError(pre+"The message supposedly holding the profile picture is deleted.", nil)
 		}
 		if len(post.FileIds) != 1 {
-			return appError(pre+"The post supposedly holding the profile picture does not have exactly 1 file.", nil)
+			return appError(pre+"The message supposedly holding the profile picture does not have exactly 1 file.", nil)
 		}
 		if post.FileIds[0] != profile.PictureFileId {
-			return appError(pre+"The post supposedly holding the profile picture does not hold the expected file.", nil)
+			return appError(pre+"The message supposedly holding the profile picture does not hold the expected file.", nil)
 		}
 		if profile.RequestKey == "" {
 			return appError(pre+"RequestKey is empty despite PictureFileId being set.", nil)
