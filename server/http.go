@@ -66,17 +66,21 @@ func serveStaticFile(be Backend, w http.ResponseWriter, r *http.Request, path st
 }
 
 func serveProfileImage(be Backend, w http.ResponseWriter, r *http.Request, userId string, profileId string, requestKey string, thumbnail bool) {
-	profile, err := GetProfile(be, userId, profileId, PROFILE_CORRUPT|PROFILE_CHARACTER|PROFILE_NONEXISTENT)
-	if err != nil {
+	profile, err := GetProfile(be, userId, profileId, PROFILE_CORRUPT|PROFILE_ME|PROFILE_CHARACTER|PROFILE_NONEXISTENT)
+	if profile == nil && err != nil {
 		http.Error(w, ErrStr(err), http.StatusInternalServerError)
 		return
 	}
-	if profile == nil || profile.Status == PROFILE_NONEXISTENT {
-		http.NotFound(w, r)
+	if profile.Status == PROFILE_ME {
+		http.Error(w, "Use Mattermost built-in API to get profile pictures for real profiles", http.StatusNotFound)
 		return
 	}
-	if profile.Status == PROFILE_CORRUPT {
-		http.Error(w, "Profile corrupt", http.StatusInternalServerError)
+	if profile.Status == PROFILE_CORRUPT || profile.Status == PROFILE_NONEXISTENT {
+		if thumbnail {
+			serveStaticFile(be, w, r, "corruptedprofilepicture/thumbnail")
+		} else {
+			serveStaticFile(be, w, r, "corruptedprofilepicture")
+		}
 		return
 	}
 	if profile.Status != PROFILE_CHARACTER {
