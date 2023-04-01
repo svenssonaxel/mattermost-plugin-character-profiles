@@ -251,15 +251,7 @@ func GetProfile(be Backend, userId, profileId string, accepted int) (*Profile, *
 }
 
 func setProfile(be Backend, userId string, profile *Profile) *model.AppError {
-	err := populateProfile(be, profile)
-	if err != nil {
-		return err
-	}
-	err = profile.validate(profile.Identifier)
-	if err != nil {
-		return err
-	}
-	err = be.KVSet(getProfileKey(userId, profile.Identifier), profile.EncodeToByte())
+	err := be.KVSet(getProfileKey(userId, profile.Identifier), profile.EncodeToByte())
 	if err != nil {
 		return err
 	}

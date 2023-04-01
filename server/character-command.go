@@ -123,6 +123,24 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 		if setPicture && newProfile.RequestKey == "" {
 			newProfile.RequestKey = be.NewId()
 		}
+		err = populateProfile(be, &newProfile)
+		if err != nil {
+			return "", nil, err
+		}
+		err = newProfile.validate(newProfile.Identifier)
+		if err != nil {
+			return "", nil, err
+		}
+		if !existed && !confirmed {
+			postCount, cErr := countPostsForProfile(be, userId, profileId)
+			if cErr != nil {
+				return "", nil, cErr
+			}
+			if postCount > 0 {
+				retMsg, retAtt := uiConfirmation(fmt.Sprintf("You are about to create a character profile with identifier `%s`, but this identifier is already used by %d existing messages. These messages will be updated according to this newly created character profile. Are you sure you want to proceed?", profileId, postCount), command, rootId)
+				return retMsg, retAtt, nil
+			}
+		}
 		err = setProfile(be, userId, &newProfile)
 		if err != nil {
 			return "", nil, err
@@ -141,6 +159,18 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 	matches = regexp.MustCompile(`^delete ([a-z]+)$`).FindStringSubmatch(query)
 	if len(matches) == 2 {
 		profileId := matches[1]
+		var postCount int
+		if !IsMe(profileId) {
+			var cErr *model.AppError
+			postCount, cErr = countPostsForProfile(be, userId, profileId)
+			if cErr != nil {
+				return "", nil, cErr
+			}
+		}
+		if postCount > 0 && !confirmed {
+			retMsg, retAtt := uiConfirmation(fmt.Sprintf("You are about to delete character profile `%s` which is used by %d existing posts. Soon after deletion, the profile picture for these posts will cease to work, but they will retain their display name. In order to manage those posts again, you can recreate the profile using the same identifier. Are you sure you want to proceed?", profileId, postCount), command, rootId)
+			return retMsg, retAtt, nil
+		}
 		if IsMe(profileId) {
 			return "", nil, appError("Please do not try to delete yourself. If you have suicidal thoughts, call 90101 (Sweden) or +1-800-273-8255 (International).", nil)
 		}
@@ -250,6 +280,14 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 				PictureFileId: oldProfile.PictureFileId,
 				Status:        PROFILE_CHARACTER,
 				RequestKey:    oldProfile.RequestKey,
+			}
+			err := populateProfile(be, newProfile)
+			if err != nil {
+				return "", nil, err
+			}
+			err = newProfile.validate(newProfile.Identifier)
+			if err != nil {
+				return "", nil, err
 			}
 			err = setProfile(be, userId, newProfile)
 			if err != nil {
