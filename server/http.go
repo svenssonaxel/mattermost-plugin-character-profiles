@@ -142,85 +142,62 @@ func serveProfileImage(be Backend, w http.ResponseWriter, r *http.Request, userI
 	w.Write(content)
 }
 
-func serveConfirm(be Backend, w http.ResponseWriter, r *http.Request) {
-	userId := r.Header.Get("Mattermost-User-ID")
-	var body struct {
-		UserId    string `json:"user_id"`
-		PostId    string `json:"post_id"`
-		ChannelId string `json:"channel_id"`
-		TeamId    string `json:"team_id"`
-		Context   struct {
-			Command string `json:"command"`
-			RootId  string `json:"root_id"`
-		} `json:"context"`
-	}
-	dErr := json.NewDecoder(r.Body).Decode(&body)
+// Subset of model.PostActionIntegrationRequest
+type PAIR struct {
+	UserId    string `json:"user_id"`
+	PostId    string `json:"post_id"`
+	ChannelId string `json:"channel_id"`
+	TeamId    string `json:"team_id"`
+	Command   string `json:"context.command"`
+	Message   string `json:"context.message"`
+	RootId    string `json:"context.root_id"`
+}
+
+func servePAIR(be Backend, w http.ResponseWriter, r *http.Request, f func(be Backend, w http.ResponseWriter, ir PAIR) (string, model.StringInterface)) {
+	var ir PAIR
+	dErr := json.NewDecoder(r.Body).Decode(&ir)
 	if dErr != nil {
 		http.Error(w, dErr.Error(), http.StatusBadRequest)
 		return
 	}
-	if body.UserId != userId {
+	if ir.UserId != r.Header.Get("Mattermost-User-ID") {
 		http.Error(w, "User ID mismatch", http.StatusBadRequest)
 		return
 	}
-	command := body.Context.Command
-	rootId := body.Context.RootId
-	msg, attachments, eErr := DoExecuteCommand(be, command, userId, body.ChannelId, body.TeamId, rootId, true)
-	iconURL := GetPluginURL(be) + "/static/botprofilepicture"
-	if eErr != nil {
-		msg, attachments = uiError(fmt.Sprintf("Command `%s` failed:\n%s", command, eErr.Error()), command, rootId)
-	}
-	be.UpdateEphemeralPost(userId, &model.Post{
-		Id:        body.PostId,
-		UserId:    userId,
-		ChannelId: body.ChannelId,
-		RootId:    rootId,
+	msg, props := f(be, w, ir)
+	be.UpdateEphemeralPost(ir.UserId, &model.Post{
+		Id:        ir.PostId,
+		UserId:    ir.UserId,
+		ChannelId: ir.ChannelId,
+		RootId:    ir.RootId,
 		Message:   msg,
-		Props: model.StringInterface{
-			"attachments":       attachments,
-			"override_username": BOT_DISPLAYNAME,
-			"override_icon_url": iconURL,
-			"from_webhook":      "true",
-		},
+		Props:     props,
 	})
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte{})
+}
+
+func serveConfirm(be Backend, w http.ResponseWriter, r *http.Request) {
+	servePAIR(be, w, r, func(be Backend, w http.ResponseWriter, ir PAIR) (string, model.StringInterface) {
+		msg, attachments, eErr := DoExecuteCommand(be, ir.Command, ir.UserId, ir.ChannelId, ir.TeamId, ir.RootId, true)
+		if eErr != nil {
+			msg, attachments = uiError(fmt.Sprintf("Command `%s` failed:\n%s", ir.Command, eErr.Error()), ir.Command, ir.RootId)
+		}
+		return msg, model.StringInterface{
+			"attachments":       attachments,
+			"override_username": BOT_DISPLAYNAME,
+			"override_icon_url": GetPluginURL(be) + "/static/botprofilepicture",
+			"from_webhook":      "true",
+		}
+	})
 }
 
 func serveEcho(be Backend, w http.ResponseWriter, r *http.Request) {
-	userId := r.Header.Get("Mattermost-User-ID")
-	var body struct {
-		UserId    string `json:"user_id"`
-		PostId    string `json:"post_id"`
-		ChannelId string `json:"channel_id"`
-		TeamId    string `json:"team_id"`
-		Context   struct {
-			Message string `json:"message"`
-			RootId  string `json:"root_id"`
-		} `json:"context"`
-	}
-	err := json.NewDecoder(r.Body).Decode(&body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if body.UserId != userId {
-		http.Error(w, "User ID mismatch", http.StatusBadRequest)
-		return
-	}
-	iconURL := GetPluginURL(be) + "/static/botprofilepicture"
-	be.UpdateEphemeralPost(userId, &model.Post{
-		Id:        body.PostId,
-		UserId:    userId,
-		ChannelId: body.ChannelId,
-		RootId:    body.Context.RootId,
-		Message:   body.Context.Message,
-		Props: model.StringInterface{
+	servePAIR(be, w, r, func(be Backend, w http.ResponseWriter, ir PAIR) (string, model.StringInterface) {
+		iconURL := GetPluginURL(be) + "/static/botprofilepicture"
+		return ir.Message, model.StringInterface{
 			"override_username": BOT_DISPLAYNAME,
 			"override_icon_url": iconURL,
 			"from_webhook":      "true",
-		},
+		}
 	})
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte{})
 }
