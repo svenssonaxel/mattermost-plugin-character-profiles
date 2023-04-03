@@ -1,4 +1,4 @@
-module github.com/svenssonaxel/mattermost-plugin-character-profiles/build
+module axelsvensson.com/mattermost-plugin-character-profiles/build
 
 go 1.12
 

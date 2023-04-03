@@ -8,7 +8,7 @@ import (
 
 	"github.com/mattermost/mattermost-server/v5/model"
 
-	"github.com/svenssonaxel/mattermost-plugin-character-profiles/server"
+	"axelsvensson.com/mattermost-plugin-character-profiles/server"
 )
 
 // This test case is anologous to TestStrset but for the Idset functions

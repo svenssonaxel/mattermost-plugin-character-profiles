@@ -7,7 +7,7 @@ import (
 
 	"github.com/mattermost/mattermost-server/v5/model"
 
-	"github.com/svenssonaxel/mattermost-plugin-character-profiles/server"
+	"axelsvensson.com/mattermost-plugin-character-profiles/server"
 )
 
 func TestDeepClonePost(t *testing.T) {
