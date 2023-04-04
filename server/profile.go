@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	perPage = 50
+	PER_PAGE = 50
 )
 
 const (
@@ -125,7 +125,6 @@ func (profile *Profile) validate(profileId string) *model.AppError {
 		if IsMe(profile.Identifier) {
 			return appError(pre+"Identifier indicates real profile despite status being PROFILE_CHARACTER.", nil)
 		}
-		break
 	case PROFILE_ME:
 		if profile.Error != nil {
 			return appError(pre+"Error is set despite status being PROFILE_ME.", nil)
@@ -133,7 +132,6 @@ func (profile *Profile) validate(profileId string) *model.AppError {
 		if !IsMe(profile.Identifier) {
 			return appError(pre+"Identifier does not indicate real profile despite status being PROFILE_ME.", nil)
 		}
-		break
 	default:
 		return appError(pre+"Status is not PROFILE_CHARACTER or PROFILE_ME.", nil)
 	}
@@ -278,9 +276,9 @@ func listProfiles(be Backend, userId string) ([]Profile, *model.AppError) {
 	}
 	ret := make([]Profile, 0)
 	for _, key := range keys {
-		profile, err := GetProfile(be, userId, key, PROFILE_CHARACTER|PROFILE_CORRUPT)
-		if err != nil {
-			return nil, err
+		profile, gpErr := GetProfile(be, userId, key, PROFILE_CHARACTER|PROFILE_CORRUPT)
+		if gpErr != nil {
+			return nil, gpErr
 		}
 		ret = append(ret, *profile)
 	}
@@ -377,17 +375,35 @@ func corruptProfile(be Backend, userId string, profileId string, method string) 
 	switch method {
 	case "1":
 		profile.Name += "_other"
-		break
 	case "2":
 		profile.Name = ""
-		break
 	case "3":
 		profile.PictureFileId = "nonexistentFileId"
-		break
 	}
 	err = be.KVSet(getProfileKey(userId, profileId), profile.EncodeToByte())
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+// In model: type ChannelMembers []ChannelMember
+func GetAllChannelMembers(be Backend, channelId string) (*model.ChannelMembers, *model.AppError) {
+	ret := make(model.ChannelMembers, 0)
+	page := 0
+	for {
+		members, err := be.GetChannelMembers(channelId, page*PER_PAGE, PER_PAGE)
+		if err != nil {
+			return nil, err
+		}
+		if members == nil {
+			break
+		}
+		ret = append(ret, *members...)
+		if len(*members) < PER_PAGE {
+			break
+		}
+		page++
+	}
+	return &ret, nil
 }

@@ -10,6 +10,8 @@ import (
 	"github.com/mattermost/mattermost-server/v5/model"
 )
 
+const CHANNEL_MENTION_MAX_MEMBERS = 5
+
 //go:embed helptext.md
 var helpText string
 
@@ -18,10 +20,9 @@ func IsMe(id string) bool {
 }
 
 func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId string, confirmed bool) (string, []*model.SlackAttachment, *model.AppError) {
-
 	// Make sure command begins correctly with `/character `
 	matches := regexp.MustCompile(`^/character (.*)$`).FindStringSubmatch(command)
-	if len(matches) != 2 {
+	if matches == nil {
 		return "", nil, appError("Expected trigger /character but got "+command, nil)
 	}
 	query := matches[1]
@@ -35,7 +36,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 	// `/character picture haddock=Captain Haddock`: Create a character profile with identifier `haddock` unless it already exists, set its display name to `Captain Haddock`, and set its profile picture to the picture uploaded in the parent message. (Note that you can **not** attach a picture to the slash command itself, for technical reasons.)
 	// `/character picture haddock`: Modify an existing character profile by updating the profile picture to the picture uploaded in the parent message, leaving the display name as it is. (Note that you can **not** attach a picture to the slash command itself, for technical reasons.)
 	matches = regexp.MustCompile(`^(picture )?([a-z]+)(=.*)?$`).FindStringSubmatch(query)
-	if len(matches) == 4 && (matches[1] != "" || matches[3] != "") {
+	if matches != nil && (matches[1] != "" || matches[3] != "") {
 		profileId := matches[2]
 		if IsMe(profileId) {
 			return "", nil, appError("You cannot use `myself` or `me` as a character profile identifyer. Use the Mattermost built-in functionality to change the display name or profile picture for your real Mattermost profile.", nil)
@@ -57,9 +58,9 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 			if rootId == "" {
 				return "", nil, appError("Setting character profile picture can only be done in a thread, with the parent post containing the picture.", nil)
 			}
-			rootPost, err := be.GetPost(rootId)
-			if err != nil {
-				return "", nil, err
+			rootPost, gpErr := be.GetPost(rootId)
+			if gpErr != nil {
+				return "", nil, gpErr
 			}
 			if rootPost == nil {
 				return "", nil, appError(fmt.Sprintf("Could not fetch root post with id `%s`", rootId), nil)
@@ -78,9 +79,9 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 		var successMessage string
 		if existed {
 			// Modify character profile
-			oldProfile, err := GetProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_CORRUPT)
-			if err != nil {
-				return "", nil, err
+			oldProfile, gpErr := GetProfile(be, userId, profileId, PROFILE_CHARACTER|PROFILE_CORRUPT)
+			if gpErr != nil {
+				return "", nil, gpErr
 			}
 			newProfile.Name = oldProfile.Name
 			newProfile.PictureFileId = oldProfile.PictureFileId
@@ -105,7 +106,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 					successMessage += " updating the profile picture (to the same as before)"
 				} else {
 					newProfile.RequestKey = be.NewId()
-					successMessage += fmt.Sprintf(" updating the profile picture")
+					successMessage += " updating the profile picture"
 				}
 			}
 		} else {
@@ -157,7 +158,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 
 	// `/character delete haddock`: Delete character profile with identifier `haddock`.
 	matches = regexp.MustCompile(`^delete ([a-z]+)$`).FindStringSubmatch(query)
-	if len(matches) == 2 {
+	if matches != nil {
 		profileId := matches[1]
 		var postCount int
 		if !IsMe(profileId) {
@@ -199,7 +200,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 
 	// `/character make haddock into milou`: Unless character profile `milou` already exists, create it with the same display name and profile picture as character profile `haddock`. Then, modify all existing messages that use character profile `haddock` to instead use character profile `milou`, and delete character profile `haddock`.
 	matches = regexp.MustCompile(`^make ([a-z]+) into ([a-z]+)$`).FindStringSubmatch(query)
-	if len(matches) == 3 {
+	if matches != nil {
 		oldProfileId := matches[1]
 		targetProfileId := matches[2]
 		oldProfile, err := GetProfile(be, userId, oldProfileId, PROFILE_CHARACTER|PROFILE_ME|PROFILE_CORRUPT|PROFILE_NONEXISTENT)
@@ -228,7 +229,6 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 			if oldCount == 0 {
 				return "", nil, appError(fmt.Sprintf("Character profile `%s` isn't used by any messages. You can delete it with `/character delete %s`.", oldProfileId, oldProfileId), nil)
 			}
-			break
 		case PROFILE_ME:
 			return "", nil, appError("Cannot make your real profile into something else. Use the Mattermost built-in functionality to change the display name or profile picture for your real Mattermost profile.", nil)
 		case PROFILE_CORRUPT:
@@ -241,7 +241,6 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 				return "", nil, appError(fmt.Sprintf("Character profile `%s` doesn't exist, and isn't used by any messages.", oldProfileId), nil)
 			}
 			return "", nil, appError(fmt.Sprintf("Character profile `%s` doesn't exist, but is still used by %d messages. Create a character profile with this identifier in order to manage those messages.", oldProfileId, oldCount), nil)
-			break
 		default:
 			return "", nil, appError("Unexpected profile type", nil)
 		}
@@ -257,7 +256,6 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 			if targetCount > 0 {
 				return "", nil, appError(fmt.Sprintf("Target character profile `%s` doesn't exist, but since it is still used by %d messages you must recreate it before you can make another character profile into it.", targetProfileId, targetCount), nil)
 			}
-			break
 		default:
 			return "", nil, appError("Unexpected profile type", nil)
 		}
@@ -267,10 +265,8 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 		switch targetProfile.Status {
 		case PROFILE_CHARACTER:
 			confirmMsg = fmt.Sprintf("Target character profile `%s` already exists, and is used by %d messages. Modifying %d messages that currently use character profile `%s` to instead use character profile `%s` isn't easily reversible since the two sets of messages would be mixed together.", targetProfileId, targetCount, oldCount, oldProfileId, targetProfileId)
-			break
 		case PROFILE_ME:
 			confirmMsg = fmt.Sprintf("Modifying %d messages that currently use character profile `%s` to instead use your real profile isn't easily reversible since they'd be mixed in with any other messages you have sent using your real profile. Also, messages that use your real profile can only be changed to use a character profile by editing them individually.", oldCount, oldProfileId)
-			break
 		case PROFILE_NONEXISTENT:
 			// Create new profile
 			newProfile = &Profile{
@@ -281,17 +277,17 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 				Status:        PROFILE_CHARACTER,
 				RequestKey:    oldProfile.RequestKey,
 			}
-			err := populateProfile(be, newProfile)
-			if err != nil {
-				return "", nil, err
+			neErr := populateProfile(be, newProfile)
+			if neErr != nil {
+				return "", nil, neErr
 			}
-			err = newProfile.validate(newProfile.Identifier)
-			if err != nil {
-				return "", nil, err
+			neErr = newProfile.validate(newProfile.Identifier)
+			if neErr != nil {
+				return "", nil, neErr
 			}
-			err = setProfile(be, userId, newProfile)
-			if err != nil {
-				return "", nil, err
+			neErr = setProfile(be, userId, newProfile)
+			if neErr != nil {
+				return "", nil, neErr
 			}
 		}
 		if !confirmed && confirmMsg != "" {
@@ -313,13 +309,10 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 		switch targetProfile.Status {
 		case PROFILE_CHARACTER:
 			successMsg = fmt.Sprintf("All messages that used character profile `%s` now use character profile `%s` instead. Character profile `%s` has been deleted.", oldProfileId, targetProfileId, oldProfileId)
-			break
 		case PROFILE_ME:
 			successMsg = fmt.Sprintf("All messages that used character profile `%s` now use your real profile instead. Character profile `%s` has been deleted.", oldProfileId, oldProfileId)
-			break
 		case PROFILE_NONEXISTENT:
 			successMsg = fmt.Sprintf("Changed identifier for character profile `%s` to `%s`.", oldProfileId, newProfileId)
-			break
 		}
 		return successMsg, attachmentsFromProfile(be, *newProfile), nil
 	}
@@ -327,7 +320,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 	// `/character I am haddock`: Set default character profile identifier for the current channel to `haddock`.
 	// `/character I am myself`: Remove the default character profile for the current channel.
 	matches = regexp.MustCompile(`^I am ([a-z]+)$`).FindStringSubmatch(query)
-	if len(matches) == 2 {
+	if matches != nil {
 		newProfileId := matches[1]
 		oldProfileId, err := getDefaultProfileIdentifier(be, userId, channelId)
 		if err != nil {
@@ -409,7 +402,7 @@ func DoExecuteCommand(be Backend, command, userId, channelId, teamId, rootId str
 
 	// Undocumented command to corrupt a profile, for testing purposes.
 	matches = regexp.MustCompile(`^corrupt([123]) ([a-z]+)$`).FindStringSubmatch(query)
-	if len(matches) == 3 {
+	if matches != nil {
 		corruptionMethod := matches[1]
 		profileId := matches[2]
 		err := corruptProfile(be, userId, profileId, corruptionMethod)
@@ -475,14 +468,14 @@ func channelMention(be Backend, channel *model.Channel, userId string, teamId st
 	case model.CHANNEL_OPEN, model.CHANNEL_PRIVATE:
 		return fmt.Sprintf("~%s", channel.Name), nil
 	case model.CHANNEL_DIRECT:
-		members, err := be.GetChannelMembers(channel.Id, 0, 100)
+		members, err := GetAllChannelMembers(be, channel.Id)
 		if err != nil {
 			return "", err
 		}
 		if members == nil {
 			return "", appError(fmt.Sprintf("Channel %s has no members.", channel.Id), nil)
 		}
-		if len(*members) != 2 {
+		if len(*members) != 2 { //nolint:gomnd
 			return "", appError(fmt.Sprintf("Channel %s has %d members, expected 2.", channel.Id, len(*members)), nil)
 		}
 		for _, member := range *members {
@@ -508,7 +501,7 @@ func channelMention(be Backend, channel *model.Channel, userId string, teamId st
 		}
 		teamName := team.Name
 		memberNames := []string{}
-		members, err := be.GetChannelMembers(channel.Id, 0, 100)
+		members, err := GetAllChannelMembers(be, channel.Id)
 		if err != nil {
 			return "", err
 		}
@@ -532,9 +525,9 @@ func channelMention(be Backend, channel *model.Channel, userId string, teamId st
 		if len(memberNames) == 0 {
 			return "", appError(fmt.Sprintf("Channel %s has no members other than user %s.", channel.Id, userId), nil)
 		}
-		if len(memberNames) > 5 {
-			memberNames[4] = fmt.Sprintf("%d others", len(memberNames)-4)
-			memberNames = memberNames[:5]
+		if len(memberNames) > CHANNEL_MENTION_MAX_MEMBERS {
+			memberNames[CHANNEL_MENTION_MAX_MEMBERS-1] = fmt.Sprintf("%d others", len(memberNames)-CHANNEL_MENTION_MAX_MEMBERS+1)
+			memberNames = memberNames[:CHANNEL_MENTION_MAX_MEMBERS]
 		}
 		if len(memberNames) > 1 {
 			ml := len(memberNames)

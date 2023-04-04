@@ -3,15 +3,18 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/gorilla/mux"
+
 	"github.com/mattermost/mattermost-server/v5/api4"
 	"github.com/mattermost/mattermost-server/v5/model"
 )
+
+const MICROSECONDS_PER_SECOND = 1000000
 
 func routerFromBackend(be Backend) *mux.Router {
 	router := mux.NewRouter()
@@ -136,10 +139,14 @@ func serveProfileImage(be Backend, w http.ResponseWriter, r *http.Request, userI
 	header.Set("Content-Disposition", "inline;filename=\""+filename+"\"; filename*=UTF-8''"+filename)
 	header.Set("Content-Security-Policy", "Frame-ancestors 'none'")
 	header.Set("Content-Type", contentType)
-	header.Set("Last-Modified", time.Unix(0, info.UpdateAt*int64(1000*1000)).UTC().Format(http.TimeFormat))
+	header.Set("Last-Modified", time.Unix(0, info.UpdateAt*int64(MICROSECONDS_PER_SECOND)).UTC().Format(http.TimeFormat))
 	header.Set("X-Content-Type-Options", "nosniff")
 	header.Set("X-Frame-Options", "DENY")
-	w.Write(content)
+	_, wErr := w.Write(content)
+	if wErr != nil {
+		http.Error(w, wErr.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 // Subset of model.PostActionIntegrationRequest

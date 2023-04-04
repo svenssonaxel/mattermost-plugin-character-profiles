@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/mattermost/mattermost-server/v5/model"
+	main "axelsvensson.com/mattermost-plugin-character-profiles/server"
 
-	"axelsvensson.com/mattermost-plugin-character-profiles/server"
+	"github.com/mattermost/mattermost-server/v5/model"
 )
 
 func TestDeepClonePost(t *testing.T) {

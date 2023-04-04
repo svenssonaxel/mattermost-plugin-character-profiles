@@ -8,7 +8,7 @@ import (
 
 	"github.com/mattermost/mattermost-server/v5/model"
 
-	"axelsvensson.com/mattermost-plugin-character-profiles/server"
+	main "axelsvensson.com/mattermost-plugin-character-profiles/server"
 )
 
 // This test case is anologous to TestStrset but for the Idset functions
@@ -35,7 +35,7 @@ func TestIdset(t *testing.T) {
 	exists, err := main.IdsetHas(be, l1, val0)
 	assert.Nil(t, err, msg)
 	assert.False(t, exists, msg)
-	exists, err = main.IdsetHas(be, l1, "")
+	_, err = main.IdsetHas(be, l1, "")
 	assert.NotNil(t, err, msg)
 	// Getting an empty list should return an empty slice
 	strset, err = idsetGet(be, l1)
@@ -94,6 +94,8 @@ func TestIdset(t *testing.T) {
 	err = main.IdsetRemove(be, l1, val3)
 	assert.Nil(t, err, msg)
 	exists, err = main.IdsetHas(be, l1, val1)
+	assert.Nil(t, err, msg)
+	assert.True(t, exists, msg)
 	// Removing an existing element should work
 	err = main.IdsetRemove(be, l1, val1)
 	assert.Nil(t, err, msg)

@@ -20,7 +20,7 @@ func uiHelper(title, text, command, yesLabel, rootId string) (string, []*model.S
 					Integration: &model.PostActionIntegration{
 						URL: fmt.Sprintf("/plugins/%s/api/v1/echo", PLUGIN_ID),
 						Context: map[string]interface{}{
-							"message": fmt.Sprintf("Cancelled command `%s`.", command),
+							"message": fmt.Sprintf("Canceled command `%s`.", command),
 						},
 					},
 				},

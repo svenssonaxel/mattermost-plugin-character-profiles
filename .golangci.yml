@@ -14,24 +14,40 @@ linters-settings:
       - fieldalignment
   misspell:
     locale: US
+  revive:
+    rules:
+      - name: var-naming
+        disabled: true
 
 linters:
   disable-all: true
   enable:
     - bodyclose
+    - depguard
+    - dogsled
+    - dupl
     - errcheck
+    - exhaustive
+    - exportloopref
+    - goconst
     - gocritic
     - gofmt
     - goimports
+    - gomnd
     - gosec
     - gosimple
     - govet
     - ineffassign
     - misspell
     - nakedret
+    - nolintlint
+    - prealloc
+    - predeclared
     - revive
     - staticcheck
     - stylecheck
+    - thelper
+    - tparallel
     - typecheck
     - unconvert
     - unused
@@ -39,6 +55,9 @@ linters:
 
 issues:
   exclude-rules:
+    - text: "ST1003:"
+      linters:
+        - stylecheck
     - path: server/configuration.go
       linters:
         - unused

@@ -49,7 +49,7 @@ func ProfiledPost(be Backend, post *model.Post, isedited bool) (*model.Post, str
 
 	// Handle one-off profiled posts
 	matches := regexp.MustCompile(`(?s)^([a-z]+):[ \n](.*)$`).FindStringSubmatch(post.Message)
-	if len(matches) == 3 {
+	if matches != nil {
 		// This might be a one-off post.
 		profileId := matches[1]
 		actualMessage := matches[2]
@@ -136,9 +136,9 @@ func updatePostsForProfile(be Backend, userId, oldProfileId, newProfileId string
 	}
 	oldKey := getIdsetKey(userId, oldProfileId)
 	err = IdsetIter(be, oldKey, "", 0, func(postId string) *model.AppError {
-		post, err := GetPostIfExists(be, postId)
-		if err != nil {
-			return err
+		post, gpErr := GetPostIfExists(be, postId)
+		if gpErr != nil {
+			return gpErr
 		}
 		if post == nil {
 			// API did not return a post, so it must have been deleted. That's fine,

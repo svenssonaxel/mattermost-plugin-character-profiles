@@ -13,7 +13,7 @@ import (
 
 	"github.com/mattermost/mattermost-server/v5/model"
 
-	"axelsvensson.com/mattermost-plugin-character-profiles/server"
+	main "axelsvensson.com/mattermost-plugin-character-profiles/server"
 )
 
 func TestScenario1(t *testing.T) {
@@ -103,39 +103,39 @@ func TestScenario1(t *testing.T) {
 	green := "#009900"
 	blue := "#5c66ff"
 	// In the beginning, the profile list contains only the default profile
-	cmd(be, "/character list", user1, channel1, team1, "", t,
+	cmd(t, be, "/character list", user1, channel1, team1, "",
 		"## Character profiles",
 		[]tAtt{{"**user-number-one** *(your real profile)*\n`me`, `myself`",
 			green, user1image},
 		})
 	// Create a new profile, then delete it
-	cmd(be, "/character someone=Someone", user1, channel1, team1, "", t,
+	cmd(t, be, "/character someone=Someone", user1, channel1, team1, "",
 		"Character profile `someone` created with display name \"Someone\"",
 		[]tAtt{{"**Someone**\n`someone`",
 			blue, characterImg},
 		})
-	cmd(be, "/character delete someone", user1, channel1, team1, "", t,
+	cmd(t, be, "/character delete someone", user1, channel1, team1, "",
 		"Deleted character profile `someone`.",
 		[]tAtt{})
 	// Create a new profile, then set its profile picture in a separate command
-	cmd(be, "/character haddock=Captain Haddock", user1, channel1, team1, "", t,
+	cmd(t, be, "/character haddock=Captain Haddock", user1, channel1, team1, "",
 		"Character profile `haddock` created with display name \"Captain Haddock\"",
 		[]tAtt{{"**Captain Haddock**\n`haddock`",
 			blue, characterImg},
 		})
-	cmd(be, "/character picture haddock", user1, channel1, team1, post1, t,
+	cmd(t, be, "/character picture haddock", user1, channel1, team1, post1,
 		"Character profile `haddock` modified by updating the profile picture",
 		[]tAtt{{"**Captain Haddock**\n`haddock`",
 			blue, user1haddockImg},
 		})
 	// Create a new profile and set its profile picture in the same command
-	cmd(be, "/character picture milou=Milou", user1, channel1, team1, post2, t,
+	cmd(t, be, "/character picture milou=Milou", user1, channel1, team1, post2,
 		"Character profile `milou` created with display name \"Milou\" and a profile picture",
 		[]tAtt{{"**Milou**\n`milou`",
 			blue, user1milouImg},
 		})
 	// List the profiles
-	cmd(be, "/character list", user1, channel1, team1, "", t,
+	cmd(t, be, "/character list", user1, channel1, team1, "",
 		"## Character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`",
@@ -146,18 +146,18 @@ func TestScenario1(t *testing.T) {
 				green, user1image},
 		})
 	// Set default profiles for two channels
-	cmd(be, "/character I am haddock", user1, channel1, team1, "", t,
+	cmd(t, be, "/character I am haddock", user1, channel1, team1, "",
 		"You are now known as \"Captain Haddock\".",
 		[]tAtt{{"**Captain Haddock**\n`haddock`",
 			blue, user1haddockImg},
 		})
-	cmd(be, "/character I am milou", user1, channel2, team1, "", t,
+	cmd(t, be, "/character I am milou", user1, channel2, team1, "",
 		"You are now known as \"Milou\".",
 		[]tAtt{{"**Milou**\n`milou`",
 			blue, user1milouImg},
 		})
 	// Change the profile picture of the first profile
-	cmd(be, "/character picture haddock", user1, channel1, team1, post2, t,
+	cmd(t, be, "/character picture haddock", user1, channel1, team1, post2,
 		"Character profile `haddock` modified by updating the profile picture",
 		[]tAtt{{"**Captain Haddock**\n`haddock`",
 			blue, user1haddockImg},
@@ -165,13 +165,13 @@ func TestScenario1(t *testing.T) {
 	// Delete the post holding the profile picture of the second profile
 	be.Posts[post2].DeleteAt = 1
 	// Although both profiles are now corrupt, the first one can be corrected by setting a new profile picture
-	cmd(be, "/character picture haddock", user1, channel1, team1, post1, t,
+	cmd(t, be, "/character picture haddock", user1, channel1, team1, post1,
 		"Character profile `haddock` modified by updating the profile picture",
 		[]tAtt{{"**Captain Haddock**\n`haddock`",
 			blue, user1haddockImg},
 		})
 	// List profiles for user1
-	cmd(be, "/character list", user1, channel1, team1, "", t,
+	cmd(t, be, "/character list", user1, channel1, team1, "",
 		"## Character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`",
@@ -182,19 +182,19 @@ func TestScenario1(t *testing.T) {
 				green, user1image},
 		})
 	// Add a post by user1 to channel1 and check that the first profile is used
-	post3 := post(be, t, &model.Post{UserId: user1, ChannelId: channel1, Message: "Hello from Haddock"},
+	post3 := post(t, be, &model.Post{UserId: user1, ChannelId: channel1, Message: "Hello from Haddock"},
 		"haddock", "Captain Haddock", user1haddockImg)
 	// Add a post by user1 to channel2 and check that the default profile is used (because the second profile is corrupt)
-	post(be, t, &model.Post{UserId: user1, ChannelId: channel2, Message: "No hello from Milou"},
+	post(t, be, &model.Post{UserId: user1, ChannelId: channel2, Message: "No hello from Milou"},
 		"", "", nil)
 	// Add a one-off post by user1 to channel2 and check that the first profile is used
-	post5 := post(be, t, &model.Post{UserId: user1, ChannelId: channel2, Message: "haddock: Hello from Haddock"},
+	post5 := post(t, be, &model.Post{UserId: user1, ChannelId: channel2, Message: "haddock: Hello from Haddock"},
 		"haddock", "Captain Haddock", user1haddockImg)
 	// Add a one-off post by user1 to channel1 and check that the default profile is used
-	post6 := post(be, t, &model.Post{UserId: user1, ChannelId: channel1, Message: "me: Hello from user-number-one"},
+	post6 := post(t, be, &model.Post{UserId: user1, ChannelId: channel1, Message: "me: Hello from user-number-one"},
 		"", "", nil)
 	// List default profiles for user1
-	cmd(be, "/character who am I", user1, channel1, team1, "", t,
+	cmd(t, be, "/character who am I", user1, channel1, team1, "",
 		"## Default character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`\nDefault profile in: ~channel-one",
@@ -203,11 +203,11 @@ func TestScenario1(t *testing.T) {
 				red, nosign},
 		})
 	// Delete the second profile
-	cmd(be, "/character delete milou", user1, channel1, team1, "", t,
+	cmd(t, be, "/character delete milou", user1, channel1, team1, "",
 		"Deleted character profile `milou`.",
 		[]tAtt{})
 	// List default profiles for user1
-	cmd(be, "/character who am I", user1, channel1, team1, "", t,
+	cmd(t, be, "/character who am I", user1, channel1, team1, "",
 		"## Default character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`\nDefault profile in: ~channel-one",
@@ -216,7 +216,7 @@ func TestScenario1(t *testing.T) {
 				red, nosign},
 		})
 	// List profiles for user1
-	cmd(be, "/character list", user1, channel1, team1, "", t,
+	cmd(t, be, "/character list", user1, channel1, team1, "",
 		"## Character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`",
@@ -225,13 +225,13 @@ func TestScenario1(t *testing.T) {
 				green, user1image},
 		})
 	// Remove the default profile for channel2
-	cmd(be, "/character I am myself", user1, channel2, team1, "", t,
+	cmd(t, be, "/character I am myself", user1, channel2, team1, "",
 		"You are now yourself again. Hope that feels ok.",
 		[]tAtt{{"**user-number-one** *(your real profile)*\n`me`, `myself`",
 			green, user1image},
 		})
 	// List default profiles for user1
-	cmd(be, "/character who am I", user1, channel1, team1, "", t,
+	cmd(t, be, "/character who am I", user1, channel1, team1, "",
 		"## Default character profiles",
 		[]tAtt{
 			{"**Captain Haddock**\n`haddock`\nDefault profile in: ~channel-one",
@@ -240,17 +240,17 @@ func TestScenario1(t *testing.T) {
 				green, user1image},
 		})
 	// Edit a post made by user1 using the first profile, to instead use the default profile
-	editPost(be, t, post5, "me: Actually, hello from me instead", "", "", nil)
+	editPost(t, be, post5, "me: Actually, hello from me instead", "", "", nil)
 	// Edit a post made by user1 using the default profile, to instead use the first profile
-	editPost(be, t, post6, "haddock: Hello from Haddock, again", "haddock", "Captain Haddock", user1haddockImg)
+	editPost(t, be, post6, "haddock: Hello from Haddock, again", "haddock", "Captain Haddock", user1haddockImg)
 	// Change the display name of the first profile
-	cmd(be, "/character haddock=Mr Haddock Sr", user1, channel1, team1, "", t,
+	cmd(t, be, "/character haddock=Mr Haddock Sr", user1, channel1, team1, "",
 		"Character profile `haddock` modified by changing the display name from \"Captain Haddock\" to \"Mr Haddock Sr\"",
 		[]tAtt{{"**Mr Haddock Sr**\n`haddock`",
 			blue, user1haddockImg},
 		})
 	// List profiles for user1
-	cmd(be, "/character list", user1, channel1, team1, "", t,
+	cmd(t, be, "/character list", user1, channel1, team1, "",
 		"## Character profiles",
 		[]tAtt{
 			{"**Mr Haddock Sr**\n`haddock`",
@@ -354,7 +354,7 @@ func TestScenario1(t *testing.T) {
 			} else {
 				pId = newPId(be)
 				pName = be.NewId()
-				cmd(be, fmt.Sprintf("/character %s=%s", pId, pName), user1, channel, team1, "", t,
+				cmd(t, be, fmt.Sprintf("/character %s=%s", pId, pName), user1, channel, team1, "",
 					fmt.Sprintf("Character profile `%s` created with display name \"%s\"", pId, pName),
 					[]tAtt{{"**" + pName + "**\n`" + pId + "`",
 						blue, characterImg},
@@ -362,7 +362,7 @@ func TestScenario1(t *testing.T) {
 				message = fmt.Sprintf("%s: Test message from %s", pId, pName)
 			}
 			for i := 0; i < postCount; i++ {
-				postId := post(be, t, &model.Post{UserId: user1, ChannelId: channel, Message: message}, pId, pName, characterImg)
+				postId := post(t, be, &model.Post{UserId: user1, ChannelId: channel, Message: message}, pId, pName, characterImg)
 				pPostIds = append(pPostIds, postId)
 			}
 			switch status {
@@ -370,13 +370,13 @@ func TestScenario1(t *testing.T) {
 				break
 			case main.PROFILE_CORRUPT:
 				// Corrupt the profile
-				cmd(be, fmt.Sprintf("/character corrupt1 %s", pId), user1, channel, team1, "", t,
+				cmd(t, be, fmt.Sprintf("/character corrupt1 %s", pId), user1, channel, team1, "",
 					fmt.Sprintf("Successfully corrupted profile `%s` using method 1.", pId),
 					[]tAtt{},
 				)
 			case main.PROFILE_NONEXISTENT:
 				// Delete the profile
-				cmd(be, fmt.Sprintf("/character delete %s", pId), user1, channel, team1, "", t,
+				cmd(t, be, fmt.Sprintf("/character delete %s", pId), user1, channel, team1, "",
 					fmt.Sprintf("Deleted character profile `%s`.", pId),
 					[]tAtt{},
 				)
@@ -418,7 +418,6 @@ func TestScenario1(t *testing.T) {
 					blue, characterImg},
 				}
 				resName = p1Name
-				break
 			case NEW:
 				att = []tAtt{{"**" + p2Name + "**\n`" + p2Id + "`",
 					blue, characterImg},
@@ -429,17 +428,16 @@ func TestScenario1(t *testing.T) {
 						green, user1image}}
 					resName = ""
 				}
-				break
 			default:
 				assert.Fail(t, "Invalid resProfile", msg)
 			}
-			cmd(be, fmt.Sprintf("/character make %s into %s", p1Id, p2Id), user1, channel, team1, "", t,
+			cmd(t, be, fmt.Sprintf("/character make %s into %s", p1Id, p2Id), user1, channel, team1, "",
 				response,
 				att)
 			checkPostProfile(p1PostIds, p2Id, resName)
 			checkPostProfile(p2PostIds, p2Id, resName)
 		} else {
-			cmdFail(be, fmt.Sprintf("/character make %s into %s", p1Id, p2Id), user1, channel, team1, "", t,
+			cmdFail(t, be, fmt.Sprintf("/character make %s into %s", p1Id, p2Id), user1, channel, team1, "",
 				response,
 			)
 			checkPostProfile(p1PostIds, p1Id, p1Name)
@@ -454,8 +452,9 @@ type tAtt struct {
 	GetImgURL func(thumb bool) string
 }
 
-func cmd(be main.Backend, command, userId, channelId, teamId, rootId string,
-	t *testing.T, expectedResponse string, expectedAttachments []tAtt) {
+func cmd(t *testing.T, be main.Backend, command, userId, channelId, teamId, rootId string,
+	expectedResponse string, expectedAttachments []tAtt) {
+	t.Helper()
 	msg := fmt.Sprintf("Command: %s", command)
 	response, attachments, err := main.DoExecuteCommand(be, command, userId, channelId, teamId, rootId, true)
 	assert.Nil(t, err, msg)
@@ -468,8 +467,9 @@ func cmd(be main.Backend, command, userId, channelId, teamId, rootId string,
 	}
 }
 
-func cmdFail(be main.Backend, command, userId, channelId, teamId, rootId string,
-	t *testing.T, expectedError string) {
+func cmdFail(t *testing.T, be main.Backend, command, userId, channelId, teamId, rootId string,
+	expectedError string) {
+	t.Helper()
 	msg := fmt.Sprintf("Command: %s", command)
 	response, attachments, err := main.DoExecuteCommand(be, command, userId, channelId, teamId, rootId, true)
 	assert.NotNil(t, err, msg)
@@ -478,7 +478,8 @@ func cmdFail(be main.Backend, command, userId, channelId, teamId, rootId string,
 	assert.Equal(t, 0, len(attachments), msg)
 }
 
-func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProfile, expectedDisplayName string, getExpectedImgURL func(thumb bool) string) string {
+func post(t *testing.T, be main.BackendMock, inputPost *model.Post, expectedProfile, expectedDisplayName string, getExpectedImgURL func(thumb bool) string) string {
+	t.Helper()
 	msg := fmt.Sprintf("Create message: %s", inputPost.Id)
 	post, errStr := main.ProfiledPost(be, inputPost, false)
 	assert.Equal(t, "", errStr, msg)
@@ -500,11 +501,13 @@ func post(be main.BackendMock, t *testing.T, inputPost *model.Post, expectedProf
 	}
 	post.Id = be.NewId()
 	be.Posts[post.Id] = post
-	main.RegisterPost(be, post)
+	rpErr := main.RegisterPost(be, post)
+	assert.Nil(t, rpErr, msg)
 	return post.Id
 }
 
-func editPost(be main.BackendMock, t *testing.T, postId string, newMessage string, expectedProfile, expectedDisplayName string, getExpectedImgURL func(thumb bool) string) {
+func editPost(t *testing.T, be main.BackendMock, postId string, newMessage string, expectedProfile, expectedDisplayName string, getExpectedImgURL func(thumb bool) string) {
+	t.Helper()
 	msg := fmt.Sprintf("Edit message: %s", postId)
 	post, pErr := be.GetPost(postId)
 	assert.Nil(t, pErr, msg)
@@ -525,5 +528,6 @@ func editPost(be main.BackendMock, t *testing.T, postId string, newMessage strin
 		assert.Equal(t, "true", post.Props["from_webhook"], msg)
 	}
 	be.Posts[post.Id] = post
-	main.RegisterPost(be, post)
+	rpErr := main.RegisterPost(be, post)
+	assert.Nil(t, rpErr, msg)
 }

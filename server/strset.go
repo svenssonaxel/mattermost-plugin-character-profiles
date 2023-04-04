@@ -49,9 +49,10 @@ func StrsetInsert(be Backend, key string, element string) *model.AppError {
 		return nil
 	}
 	// Insert element at index i
-	newContents := append(oldContents, "")
-	copy(newContents[i+1:], newContents[i:])
+	newContents := make([]string, len(oldContents)+1)
+	copy(newContents, oldContents[:i])
 	newContents[i] = element
+	copy(newContents[i+1:], oldContents[i:])
 	newJson, jsonErr := json.Marshal(newContents)
 	if jsonErr != nil {
 		return appError("Failed to marshal string array.", jsonErr)
@@ -76,7 +77,9 @@ func StrsetRemove(be Backend, key string, element string) *model.AppError {
 		return nil
 	}
 	// Remove element at index i
-	newContents := append(oldContents[:i], oldContents[i+1:]...)
+	newContents := make([]string, len(oldContents)-1)
+	copy(newContents, oldContents[:i])
+	copy(newContents[i:], oldContents[i+1:])
 	newJson, jsonErr := json.Marshal(newContents)
 	if jsonErr != nil {
 		return appError("Failed to marshal string array.", jsonErr)

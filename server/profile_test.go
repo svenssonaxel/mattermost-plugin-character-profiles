@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"axelsvensson.com/mattermost-plugin-character-profiles/server"
+	main "axelsvensson.com/mattermost-plugin-character-profiles/server"
 )
 
 func TestEncodeDecode(t *testing.T) {

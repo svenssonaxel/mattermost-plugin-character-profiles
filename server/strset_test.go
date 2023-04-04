@@ -7,7 +7,7 @@ import (
 
 	"github.com/mattermost/mattermost-server/v5/model"
 
-	"axelsvensson.com/mattermost-plugin-character-profiles/server"
+	main "axelsvensson.com/mattermost-plugin-character-profiles/server"
 )
 
 func TestStrset(t *testing.T) {
@@ -91,6 +91,8 @@ func TestStrset(t *testing.T) {
 	err = main.StrsetRemove(be, l1, "val3")
 	assert.Nil(t, err, msg)
 	exists, err = main.StrsetHas(be, l1, "val1")
+	assert.Nil(t, err, msg)
+	assert.True(t, exists, msg)
 	// Removing an existing element should work
 	err = main.StrsetRemove(be, l1, "val1")
 	assert.Nil(t, err, msg)
